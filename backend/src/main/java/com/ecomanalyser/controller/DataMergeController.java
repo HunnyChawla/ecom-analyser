@@ -1,0 +1,182 @@
+package com.ecomanalyser.controller;
+
+import com.ecomanalyser.service.DataMergeService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
+
+@RestController
+@RequestMapping("/api/data-merge")
+@RequiredArgsConstructor
+@Slf4j
+public class DataMergeController {
+
+    private final DataMergeService dataMergeService;
+
+    /**
+     * Get merged orders and payments data
+     */
+    @GetMapping("/merged-data")
+    public ResponseEntity<List<DataMergeService.MergedOrderData>> getMergedData() {
+        try {
+            log.info("Requesting merged orders and payments data");
+            List<DataMergeService.MergedOrderData> mergedData = dataMergeService.mergeOrdersAndPayments();
+            
+            log.info("Successfully retrieved {} merged records", mergedData.size());
+            return ResponseEntity.ok(mergedData);
+        } catch (Exception e) {
+            log.error("Error retrieving merged data: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Get merge statistics
+     */
+    @GetMapping("/statistics")
+    public ResponseEntity<Map<String, Object>> getMergeStatistics() {
+        try {
+            log.info("Requesting merge statistics");
+            Map<String, Object> stats = dataMergeService.getMergeStatistics();
+            
+            log.info("Successfully retrieved merge statistics");
+            return ResponseEntity.ok(stats);
+        } catch (Exception e) {
+            log.error("Error retrieving merge statistics: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Simple test endpoint to check if data can be retrieved
+     */
+    @GetMapping("/test")
+    public ResponseEntity<Map<String, Object>> testEndpoint() {
+        try {
+            log.info("Testing simple endpoint...");
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", "Test successful");
+            response.put("timestamp", System.currentTimeMillis());
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Error in test endpoint: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Get merged data with pagination
+     */
+    @GetMapping("/merged-data/paginated")
+    public ResponseEntity<Map<String, Object>> getMergedDataPaginated(
+            @RequestParam("page") int page,
+            @RequestParam("size") int size) {
+        try {
+            log.info("Requesting merged data with pagination - page: {}, size: {}", page, size);
+            
+            List<DataMergeService.MergedOrderData> allData = dataMergeService.mergeOrdersAndPayments();
+            
+            int totalRecords = allData.size();
+            int totalPages = (int) Math.ceil((double) totalRecords / size);
+            
+            // Validate page number
+            if (page < 0) {
+                page = 0;
+            }
+            if (page >= totalPages && totalPages > 0) {
+                page = totalPages - 1;
+            }
+            
+            // Apply pagination
+            int startIndex = page * size;
+            int endIndex = Math.min(startIndex + size, totalRecords);
+            
+            // Ensure indices are valid
+            if (startIndex >= totalRecords) {
+                startIndex = 0;
+                endIndex = Math.min(size, totalRecords);
+            }
+            
+            List<DataMergeService.MergedOrderData> paginatedData = allData.subList(startIndex, endIndex);
+            
+            // Build response with full data structure
+            Map<String, Object> response = new HashMap<>();
+            response.put("data", paginatedData);
+            response.put("totalRecords", totalRecords);
+            response.put("pageSize", size);
+            response.put("currentPage", page);
+            response.put("totalPages", totalPages);
+            response.put("hasNext", page < totalPages - 1);
+            response.put("hasPrevious", page > 0);
+            
+            log.info("Successfully retrieved paginated merged data - page {} of {}", page + 1, totalPages);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Error retrieving paginated merged data: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Get merged data filtered by final status
+     */
+    @GetMapping("/merged-data/status/{status}")
+    public ResponseEntity<List<DataMergeService.MergedOrderData>> getMergedDataByStatus(
+            @PathVariable String status) {
+        try {
+            log.info("Requesting merged data filtered by status: {}", status);
+            
+            if (status == null || status.trim().isEmpty()) {
+                log.warn("Status parameter is null or empty");
+                return ResponseEntity.badRequest().build();
+            }
+            
+            List<DataMergeService.MergedOrderData> allData = dataMergeService.mergeOrdersAndPayments();
+            List<DataMergeService.MergedOrderData> filteredData = allData.stream()
+                    .filter(record -> record.getFinalStatus() != null && 
+                                   status.equalsIgnoreCase(record.getFinalStatus().trim()))
+                    .toList();
+            
+            log.info("Found {} records with status: {}", filteredData.size(), status);
+            return ResponseEntity.ok(filteredData);
+        } catch (Exception e) {
+            log.error("Error retrieving merged data by status: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Get merged data filtered by status source
+     */
+    @GetMapping("/merged-data/source/{source}")
+    public ResponseEntity<List<DataMergeService.MergedOrderData>> getMergedDataBySource(
+            @PathVariable String source) {
+        try {
+            log.info("Requesting merged data filtered by source: {}", source);
+            
+            if (source == null || source.trim().isEmpty()) {
+                log.warn("Source parameter is null or empty");
+                return ResponseEntity.badRequest().build();
+            }
+            
+            List<DataMergeService.MergedOrderData> allData = dataMergeService.mergeOrdersAndPayments();
+            List<DataMergeService.MergedOrderData> filteredData = allData.stream()
+                    .filter(record -> record.getStatusSource() != null && 
+                                   source.equalsIgnoreCase(record.getStatusSource().trim()))
+                    .toList();
+            
+            log.info("Found {} records with source: {}", filteredData.size(), source);
+            return ResponseEntity.ok(filteredData);
+        } catch (Exception e) {
+            log.error("Error retrieving merged data by source: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+}
