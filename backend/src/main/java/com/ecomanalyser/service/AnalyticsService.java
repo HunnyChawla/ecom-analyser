@@ -323,15 +323,10 @@ public class AnalyticsService {
         LocalDateTime s = start.atStartOfDay();
         LocalDateTime e = end.plusDays(1).atStartOfDay().minusNanos(1);
 
-        // Derive gross revenue from orders (ensures revenue >= profit)
-        BigDecimal totalRevenue = orderRepository.findByOrderDateTimeBetween(s, e)
-                .stream()
-                .map(o -> (o.getSellingPrice() == null || o.getQuantity() == null)
-                        ? BigDecimal.ZERO
-                        : o.getSellingPrice().multiply(BigDecimal.valueOf(o.getQuantity())))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // Revenue from bank settlement amounts (payments)
+        BigDecimal totalRevenue = BigDecimal.ZERO;
 
-        // Compute payments received separately (for reference/UI if needed)
+        // Compute payments received and also prefer using it as totalRevenue
         BigDecimal paymentsReceived = BigDecimal.ZERO;
         try {
             var normalizedPaymentRepo = applicationContext.getBean(com.ecomanalyser.repository.NormalizedPaymentRepository.class);
@@ -347,26 +342,40 @@ public class AnalyticsService {
                     .map(p -> p.getAmount() == null ? BigDecimal.ZERO : p.getAmount())
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
         }
+        totalRevenue = paymentsReceived;
 
-        // Totals derived from orders and purchase price
+        // Totals derived from payments (bank settlement) minus cost from orders' purchase prices
         BigDecimal totalProfit = BigDecimal.ZERO;
         BigDecimal totalLoss = BigDecimal.ZERO;
         long totalOrders = 0L;
 
         var orders = orderRepository.findByOrderDateTimeBetween(s, e);
         totalOrders = orders.size();
-        for (OrderEntity o : orders) {
-            BigDecimal purchase = getPurchasePriceForSku(o.getSku());
-            if (o.getSellingPrice() != null && o.getQuantity() != null) {
-                BigDecimal profit = o.getSellingPrice().subtract(purchase)
-                        .multiply(BigDecimal.valueOf(o.getQuantity()));
-                if (profit.signum() >= 0) {
-                    totalProfit = totalProfit.add(profit);
-                } else {
-                    totalLoss = totalLoss.add(profit.abs());
+
+        // Build quick lookup by orderId for cost calculation
+        Map<String, OrderEntity> orderById = orders.stream()
+                .filter(o -> o.getOrderId() != null)
+                .collect(Collectors.toMap(OrderEntity::getOrderId, o -> o, (a,b) -> a));
+
+        var paymentsInRange = paymentRepository.findByPaymentDateTimeBetween(s, e);
+        paymentsInRange.forEach(p -> {
+            var orderOpt = Optional.ofNullable(orderById.get(p.getOrderId()));
+            BigDecimal revenue = p.getAmount() == null ? BigDecimal.ZERO : p.getAmount();
+            BigDecimal cost = BigDecimal.ZERO;
+            if (orderOpt.isPresent()) {
+                OrderEntity o = orderOpt.get();
+                BigDecimal purchase = getPurchasePriceForSku(o.getSku());
+                if (o.getQuantity() != null) {
+                    cost = purchase.multiply(BigDecimal.valueOf(o.getQuantity()));
                 }
             }
-        }
+            BigDecimal profit = revenue.subtract(cost);
+            if (profit.signum() >= 0) {
+                totalProfit = totalProfit.add(profit);
+            } else {
+                totalLoss = totalLoss.add(profit.abs());
+            }
+        });
 
         BigDecimal netIncome = totalProfit.subtract(totalLoss);
 
