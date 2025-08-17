@@ -307,6 +307,67 @@ public class AnalyticsService {
         int firstMonth = quarter * 3 + 1;
         return LocalDate.of(date.getYear(), firstMonth, 1);
     }
+
+    /**
+     * Monthly summary metrics for a given year/month
+     */
+    public Map<String, Object> getMonthlySummary(int year, int month) {
+        LocalDate start = LocalDate.of(year, month, 1);
+        LocalDate end = start.with(TemporalAdjusters.lastDayOfMonth());
+        LocalDateTime s = start.atStartOfDay();
+        LocalDateTime e = end.plusDays(1).atStartOfDay().minusNanos(1);
+
+        // Total revenue from normalized payments first (preferred), fallback to raw payments table
+        BigDecimal totalRevenue = BigDecimal.ZERO;
+        try {
+            var normalizedPaymentRepo = applicationContext.getBean(com.ecomanalyser.repository.NormalizedPaymentRepository.class);
+            var np = normalizedPaymentRepo.findByPaymentDateBetween(start, end);
+            totalRevenue = np.stream()
+                    .map(p -> p.getAmount() == null ? BigDecimal.ZERO : p.getAmount())
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        } catch (Exception ignored) {
+        }
+        if (totalRevenue.compareTo(BigDecimal.ZERO) == 0) {
+            totalRevenue = paymentRepository.findByPaymentDateTimeBetween(s, e)
+                    .stream()
+                    .map(p -> p.getAmount() == null ? BigDecimal.ZERO : p.getAmount())
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        }
+
+        // Totals derived from orders and purchase price
+        BigDecimal totalProfit = BigDecimal.ZERO;
+        BigDecimal totalLoss = BigDecimal.ZERO;
+        long totalOrders = 0L;
+
+        var orders = orderRepository.findByOrderDateTimeBetween(s, e);
+        totalOrders = orders.size();
+        for (OrderEntity o : orders) {
+            BigDecimal purchase = getPurchasePriceForSku(o.getSku());
+            if (o.getSellingPrice() != null && o.getQuantity() != null) {
+                BigDecimal profit = o.getSellingPrice().subtract(purchase)
+                        .multiply(BigDecimal.valueOf(o.getQuantity()));
+                if (profit.signum() >= 0) {
+                    totalProfit = totalProfit.add(profit);
+                } else {
+                    totalLoss = totalLoss.add(profit.abs());
+                }
+            }
+        }
+
+        BigDecimal netIncome = totalProfit.subtract(totalLoss);
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("year", year);
+        summary.put("month", month);
+        summary.put("start", start);
+        summary.put("end", end);
+        summary.put("totalRevenue", totalRevenue);
+        summary.put("totalProfit", totalProfit);
+        summary.put("totalOrders", totalOrders);
+        summary.put("totalLoss", totalLoss);
+        summary.put("netIncome", netIncome);
+        return summary;
+    }
 }
 
 
