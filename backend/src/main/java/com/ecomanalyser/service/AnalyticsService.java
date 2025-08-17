@@ -344,43 +344,55 @@ public class AnalyticsService {
         }
         totalRevenue = paymentsReceived;
 
-        // Totals derived from payments (bank settlement) minus cost from orders' purchase prices
+        // Totals derived from payments in month, cost counted once per order (join by orderId)
         BigDecimal totalProfit = BigDecimal.ZERO;
         BigDecimal totalLoss = BigDecimal.ZERO;
         long totalOrders = 0L;
 
-        var orders = orderRepository.findByOrderDateTimeBetween(s, e);
-        totalOrders = orders.size();
-
-        // Build quick lookup by orderId for cost calculation
-        Map<String, OrderEntity> orderById = orders.stream()
-                .filter(o -> o.getOrderId() != null)
-                .collect(Collectors.toMap(OrderEntity::getOrderId, o -> o, (a,b) -> a));
+        var ordersInMonth = orderRepository.findByOrderDateTimeBetween(s, e);
+        totalOrders = ordersInMonth.size();
 
         var paymentsInRange = paymentRepository.findByPaymentDateTimeBetween(s, e);
-        for (var p : paymentsInRange) {
-            var orderOpt = Optional.ofNullable(orderById.get(p.getOrderId()));
-            BigDecimal revenue = p.getAmount() == null ? BigDecimal.ZERO : p.getAmount();
+        // Group payments per orderId
+        Map<String, BigDecimal> revenueByOrderId = paymentsInRange.stream()
+                .filter(p -> p.getOrderId() != null)
+                .collect(Collectors.groupingBy(
+                        p -> p.getOrderId(),
+                        Collectors.mapping(
+                                p -> p.getAmount() == null ? BigDecimal.ZERO : p.getAmount(),
+                                Collectors.reducing(BigDecimal.ZERO, BigDecimal::add)
+                        )
+                ));
+
+        // Load all orders for these orderIds in one call (even if order date is outside month)
+        List<String> paidOrderIds = new ArrayList<>(revenueByOrderId.keySet());
+        Map<String, OrderEntity> paidOrders = new HashMap<>();
+        if (!paidOrderIds.isEmpty()) {
+            var found = orderRepository.findByOrderIdIn(paidOrderIds);
+            for (OrderEntity o : found) {
+                if (o.getOrderId() != null) paidOrders.put(o.getOrderId(), o);
+            }
+        }
+
+        for (Map.Entry<String, BigDecimal> entry : revenueByOrderId.entrySet()) {
+            String orderId = entry.getKey();
+            BigDecimal revenue = entry.getValue();
             BigDecimal cost = BigDecimal.ZERO;
-            if (orderOpt.isPresent()) {
-                OrderEntity o = orderOpt.get();
+            OrderEntity o = paidOrders.get(orderId);
+            if (o != null) {
                 BigDecimal purchase = getPurchasePriceForSku(o.getSku());
                 if (o.getQuantity() != null) {
                     cost = purchase.multiply(BigDecimal.valueOf(o.getQuantity()));
                 }
             }
             BigDecimal profit = revenue.subtract(cost);
-            if (profit.signum() >= 0) {
-                totalProfit = totalProfit.add(profit);
-            } else {
-                totalLoss = totalLoss.add(profit.abs());
-            }
+            if (profit.signum() >= 0) totalProfit = totalProfit.add(profit); else totalLoss = totalLoss.add(profit.abs());
         }
 
         // Fallback: if there are no payments, derive from orders so UI isn't empty
         if (paymentsInRange.isEmpty()) {
             BigDecimal ordersRevenue = BigDecimal.ZERO;
-            for (OrderEntity o : orders) {
+            for (OrderEntity o : ordersInMonth) {
                 BigDecimal purchase = getPurchasePriceForSku(o.getSku());
                 if (o.getSellingPrice() != null && o.getQuantity() != null) {
                     BigDecimal lineRevenue = o.getSellingPrice().multiply(BigDecimal.valueOf(o.getQuantity()));
