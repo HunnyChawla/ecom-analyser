@@ -401,14 +401,13 @@ public class AnalyticsService {
         for (Map.Entry<String, BigDecimal> entry : revenueByOrderId.entrySet()) {
             String orderId = entry.getKey();
             BigDecimal revenue = entry.getValue();
-            BigDecimal cost = BigDecimal.ZERO;
             OrderEntity o = paidOrders.get(orderId);
-            if (o != null) {
-                BigDecimal purchase = computePurchasePrice(o);
-                if (o.getQuantity() != null) {
-                    cost = purchase.multiply(BigDecimal.valueOf(o.getQuantity()));
-                }
+            if (o == null) {
+                // Unknown order → cannot compute cost, exclude from profit/loss
+                continue;
             }
+            BigDecimal purchase = computePurchasePrice(o);
+            BigDecimal cost = (o.getQuantity() != null) ? purchase.multiply(BigDecimal.valueOf(o.getQuantity())) : BigDecimal.ZERO;
             BigDecimal profit = revenue.subtract(cost);
             if (profit.signum() >= 0) totalProfit = totalProfit.add(profit); else totalLoss = totalLoss.add(profit.abs());
         }
