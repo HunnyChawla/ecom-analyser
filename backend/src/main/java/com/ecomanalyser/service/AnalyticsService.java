@@ -333,6 +333,15 @@ public class AnalyticsService {
                     .map(p -> p.getAmount() == null ? BigDecimal.ZERO : p.getAmount())
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
         }
+        // Final fallback: derive revenue from orders if no payment data exists
+        if (totalRevenue.compareTo(BigDecimal.ZERO) == 0) {
+            totalRevenue = orderRepository.findByOrderDateTimeBetween(s, e)
+                    .stream()
+                    .map(o -> (o.getSellingPrice() == null || o.getQuantity() == null)
+                            ? BigDecimal.ZERO
+                            : o.getSellingPrice().multiply(BigDecimal.valueOf(o.getQuantity())))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        }
 
         // Totals derived from orders and purchase price
         BigDecimal totalProfit = BigDecimal.ZERO;
