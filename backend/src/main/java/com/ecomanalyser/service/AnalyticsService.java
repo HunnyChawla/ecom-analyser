@@ -151,13 +151,37 @@ public class AnalyticsService {
         try {
             // First try to get price from SKU group mapping
             var skuGroupService = applicationContext.getBean(SkuGroupService.class);
-            return skuGroupService.getPurchasePriceForSku(sku);
+            BigDecimal price = skuGroupService.getPurchasePriceForSku(sku);
+            if (price != null && price.compareTo(BigDecimal.ZERO) > 0) {
+                return price;
+            }
+            // If zero/absent, fallback to individual SKU price
+            return skuPriceRepository.findBySku(sku)
+                    .map(SkuPriceEntity::getPurchasePrice)
+                    .filter(p -> p != null && p.compareTo(BigDecimal.ZERO) > 0)
+                    .orElse(BigDecimal.ZERO);
         } catch (Exception e) {
             // Fallback to individual SKU price (existing behavior)
             return skuPriceRepository.findBySku(sku)
                     .map(SkuPriceEntity::getPurchasePrice)
                     .orElseGet(() -> BigDecimal.valueOf(java.util.concurrent.ThreadLocalRandom.current().nextDouble(10.0, 80.0)).setScale(2, RoundingMode.HALF_UP));
         }
+    }
+
+    /**
+     * Compute purchase price for a specific order using multiple fallbacks.
+     */
+    private BigDecimal computePurchasePrice(OrderEntity order) {
+        if (order == null) return BigDecimal.ZERO;
+        BigDecimal fromCatalog = getPurchasePriceForSku(order.getSku());
+        if (fromCatalog != null && fromCatalog.compareTo(BigDecimal.ZERO) > 0) return fromCatalog;
+        if (order.getSupplierDiscountedPrice() != null && order.getSupplierDiscountedPrice().compareTo(BigDecimal.ZERO) > 0) {
+            return order.getSupplierDiscountedPrice();
+        }
+        if (order.getSupplierListedPrice() != null && order.getSupplierListedPrice().compareTo(BigDecimal.ZERO) > 0) {
+            return order.getSupplierListedPrice();
+        }
+        return BigDecimal.ZERO;
     }
 
     public List<Map<String, Object>> getOrderCountsByStatus(LocalDate start, LocalDate end) {
@@ -380,7 +404,7 @@ public class AnalyticsService {
             BigDecimal cost = BigDecimal.ZERO;
             OrderEntity o = paidOrders.get(orderId);
             if (o != null) {
-                BigDecimal purchase = getPurchasePriceForSku(o.getSku());
+                BigDecimal purchase = computePurchasePrice(o);
                 if (o.getQuantity() != null) {
                     cost = purchase.multiply(BigDecimal.valueOf(o.getQuantity()));
                 }
@@ -393,7 +417,7 @@ public class AnalyticsService {
         if (paymentsInRange.isEmpty()) {
             BigDecimal ordersRevenue = BigDecimal.ZERO;
             for (OrderEntity o : ordersInMonth) {
-                BigDecimal purchase = getPurchasePriceForSku(o.getSku());
+                BigDecimal purchase = computePurchasePrice(o);
                 if (o.getSellingPrice() != null && o.getQuantity() != null) {
                     BigDecimal lineRevenue = o.getSellingPrice().multiply(BigDecimal.valueOf(o.getQuantity()));
                     ordersRevenue = ordersRevenue.add(lineRevenue);
