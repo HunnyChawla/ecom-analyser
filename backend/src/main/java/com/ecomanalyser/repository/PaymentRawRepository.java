@@ -24,3 +24,4 @@ public interface PaymentRawRepository extends JpaRepository<PaymentRawEntity, Lo
     
     void deleteByBatchId(String batchId);
 }
+

@@ -22,3 +22,4 @@ public class IngestionResponse {
     private List<String> warnings;
     private List<String> errors;
 }
+

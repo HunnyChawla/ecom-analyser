@@ -48,3 +48,4 @@ public class PaymentRawEntity {
         PENDING, VALID, INVALID, PROCESSED
     }
 }
+
