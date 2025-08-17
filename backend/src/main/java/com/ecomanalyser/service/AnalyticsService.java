@@ -455,6 +455,74 @@ public class AnalyticsService {
         summary.put("paymentsReceived", paymentsReceived);
         return summary;
     }
+
+    /**
+     * Diagnostics: show how payments join to orders and computed costs for a given month
+     */
+    public Map<String, Object> getMonthlyDiagnostics(int year, int month) {
+        LocalDate start = LocalDate.of(year, month, 1);
+        LocalDate end = start.with(TemporalAdjusters.lastDayOfMonth());
+        LocalDateTime s = start.atStartOfDay();
+        LocalDateTime e = end.plusDays(1).atStartOfDay().minusNanos(1);
+
+        var payments = paymentRepository.findByPaymentDateTimeBetween(s, e);
+        Map<String, BigDecimal> revenueByOrderId = payments.stream()
+                .filter(p -> p.getOrderId() != null)
+                .collect(Collectors.groupingBy(
+                        p -> p.getOrderId().trim(),
+                        Collectors.mapping(
+                                p -> p.getAmount() == null ? BigDecimal.ZERO : p.getAmount(),
+                                Collectors.reducing(BigDecimal.ZERO, BigDecimal::add)
+                        )
+                ));
+
+        List<String> orderIds = new ArrayList<>(revenueByOrderId.keySet());
+        Map<String, OrderEntity> ordersById = new HashMap<>();
+        if (!orderIds.isEmpty()) {
+            var found = orderRepository.findByOrderIdIn(orderIds);
+            for (OrderEntity o : found) {
+                if (o.getOrderId() != null) ordersById.put(o.getOrderId().trim(), o);
+            }
+        }
+
+        int matched = 0;
+        int zeroCost = 0;
+        List<Map<String, Object>> samples = new ArrayList<>();
+        for (Map.Entry<String, BigDecimal> en : revenueByOrderId.entrySet()) {
+            String orderId = en.getKey();
+            OrderEntity o = ordersById.get(orderId);
+            boolean hasOrder = o != null;
+            if (hasOrder) matched++;
+            BigDecimal qty = hasOrder && o.getQuantity() != null ? BigDecimal.valueOf(o.getQuantity()) : BigDecimal.ZERO;
+            BigDecimal purchase = hasOrder ? computePurchasePrice(o) : BigDecimal.ZERO;
+            BigDecimal cost = purchase.multiply(qty);
+            if (cost.compareTo(BigDecimal.ZERO) == 0) zeroCost++;
+            if (samples.size() < 10) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("orderId", orderId);
+                row.put("revenue", en.getValue());
+                row.put("hasOrder", hasOrder);
+                if (hasOrder) {
+                    row.put("sku", o.getSku());
+                    row.put("quantity", o.getQuantity());
+                    row.put("purchasePriceUsed", purchase);
+                    row.put("cost", cost);
+                    row.put("profit", en.getValue().subtract(cost));
+                }
+                samples.add(row);
+            }
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("year", year);
+        out.put("month", month);
+        out.put("paymentsCount", payments.size());
+        out.put("paymentOrderIds", revenueByOrderId.size());
+        out.put("matchedOrders", matched);
+        out.put("zeroCostOrders", zeroCost);
+        out.put("samples", samples);
+        return out;
+    }
 }
 
 

@@ -36,6 +36,22 @@ public class AnalyticsController {
         return analyticsService.ordersByTime(start, end, agg);
     }
 
+    @GetMapping("/monthly-summary")
+    public Map<String, Object> monthlySummary(
+            @RequestParam("year") int year,
+            @RequestParam("month") int month
+    ) {
+        return analyticsService.getMonthlySummary(year, month);
+    }
+
+    @GetMapping("/monthly-diagnostics")
+    public Map<String, Object> monthlyDiagnostics(
+            @RequestParam("year") int year,
+            @RequestParam("month") int month
+    ) {
+        return analyticsService.getMonthlyDiagnostics(year, month);
+    }
+
     @GetMapping("/payments-by-time")
     public ChartResponse<TimeSeriesPoint> paymentsByTime(
             @RequestParam("start") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,
