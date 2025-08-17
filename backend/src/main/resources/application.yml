@@ -30,3 +30,7 @@ logging:
     com.ecomanalyser.service.ExcelImportService: DEBUG
     com.ecomanalyser: DEBUG
 
+kafka:
+  enabled: true
+  bootstrap-servers: localhost:9092
+
