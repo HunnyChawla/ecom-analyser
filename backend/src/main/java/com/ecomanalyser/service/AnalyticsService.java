@@ -257,16 +257,19 @@ public class AnalyticsService {
     public ChartResponse<TimeSeriesPoint> profitTrend(LocalDate start, LocalDate end, Aggregation agg) {
         LocalDateTime s = start.atStartOfDay();
         LocalDateTime e = end.plusDays(1).atStartOfDay().minusNanos(1);
-        var orders = orderRepository.findByOrderDateTimeBetween(s, e);
+        var payments = paymentRepository.findByPaymentDateTimeBetween(s, e);
         Map<LocalDate, BigDecimal> totals = new TreeMap<>();
-        for (OrderEntity o : orders) {
-            BigDecimal purchase = skuPriceRepository.findBySku(o.getSku())
-                    .map(SkuPriceEntity::getPurchasePrice)
-                    .orElseGet(() -> BigDecimal.valueOf(java.util.concurrent.ThreadLocalRandom.current().nextDouble(10.0, 80.0)).setScale(2, RoundingMode.HALF_UP));
-            BigDecimal profit = o.getSellingPrice().subtract(purchase).multiply(BigDecimal.valueOf(o.getQuantity()));
-            LocalDate key = aggregateDate(o.getOrderDateTime().toLocalDate(), agg);
-            totals.merge(key, profit.max(BigDecimal.ZERO), BigDecimal::add);
-        }
+        payments.forEach(p -> {
+            var orderOpt = orderRepository.findByOrderId(p.getOrderId());
+            if (orderOpt.isEmpty()) return;
+            OrderEntity o = orderOpt.get();
+            BigDecimal purchase = getPurchasePriceForSku(o.getSku());
+            BigDecimal cost = (o.getQuantity() == null ? BigDecimal.ZERO : purchase.multiply(BigDecimal.valueOf(o.getQuantity())));
+            BigDecimal revenue = p.getAmount() == null ? BigDecimal.ZERO : p.getAmount();
+            BigDecimal profit = revenue.subtract(cost);
+            LocalDate key = aggregateDate(p.getPaymentDateTime().toLocalDate(), agg);
+            totals.merge(key, profit.signum() > 0 ? profit : BigDecimal.ZERO, BigDecimal::add);
+        });
         List<TimeSeriesPoint> points = totals.entrySet().stream()
                 .map(en -> new TimeSeriesPoint(en.getKey(), en.getValue()))
                 .toList();
@@ -276,17 +279,20 @@ public class AnalyticsService {
     public ChartResponse<TimeSeriesPoint> lossTrend(LocalDate start, LocalDate end, Aggregation agg) {
         LocalDateTime s = start.atStartOfDay();
         LocalDateTime e = end.plusDays(1).atStartOfDay().minusNanos(1);
-        var orders = orderRepository.findByOrderDateTimeBetween(s, e);
+        var payments = paymentRepository.findByPaymentDateTimeBetween(s, e);
         Map<LocalDate, BigDecimal> totals = new TreeMap<>();
-        for (OrderEntity o : orders) {
-            BigDecimal purchase = skuPriceRepository.findBySku(o.getSku())
-                    .map(SkuPriceEntity::getPurchasePrice)
-                    .orElseGet(() -> BigDecimal.valueOf(java.util.concurrent.ThreadLocalRandom.current().nextDouble(10.0, 80.0)).setScale(2, RoundingMode.HALF_UP));
-            BigDecimal profit = o.getSellingPrice().subtract(purchase).multiply(BigDecimal.valueOf(o.getQuantity()));
-            LocalDate key = aggregateDate(o.getOrderDateTime().toLocalDate(), agg);
+        payments.forEach(p -> {
+            var orderOpt = orderRepository.findByOrderId(p.getOrderId());
+            if (orderOpt.isEmpty()) return;
+            OrderEntity o = orderOpt.get();
+            BigDecimal purchase = getPurchasePriceForSku(o.getSku());
+            BigDecimal cost = (o.getQuantity() == null ? BigDecimal.ZERO : purchase.multiply(BigDecimal.valueOf(o.getQuantity())));
+            BigDecimal revenue = p.getAmount() == null ? BigDecimal.ZERO : p.getAmount();
+            BigDecimal profit = revenue.subtract(cost);
+            LocalDate key = aggregateDate(p.getPaymentDateTime().toLocalDate(), agg);
             BigDecimal loss = profit.signum() < 0 ? profit.abs() : BigDecimal.ZERO;
             totals.merge(key, loss, BigDecimal::add);
-        }
+        });
         List<TimeSeriesPoint> points = totals.entrySet().stream()
                 .map(en -> new TimeSeriesPoint(en.getKey(), en.getValue()))
                 .toList();
