@@ -377,6 +377,33 @@ public class AnalyticsService {
             }
         }
 
+        // Fallback: if there are no payments, derive from orders so UI isn't empty
+        if (paymentsInRange.isEmpty()) {
+            BigDecimal ordersRevenue = BigDecimal.ZERO;
+            for (OrderEntity o : orders) {
+                BigDecimal purchase = getPurchasePriceForSku(o.getSku());
+                if (o.getSellingPrice() != null && o.getQuantity() != null) {
+                    BigDecimal lineRevenue = o.getSellingPrice().multiply(BigDecimal.valueOf(o.getQuantity()));
+                    ordersRevenue = ordersRevenue.add(lineRevenue);
+                    BigDecimal profit = o.getSellingPrice().subtract(purchase)
+                            .multiply(BigDecimal.valueOf(o.getQuantity()));
+                    if (profit.signum() >= 0) {
+                        totalProfit = totalProfit.add(profit);
+                    } else {
+                        totalLoss = totalLoss.add(profit.abs());
+                    }
+                }
+            }
+            if (totalRevenue.compareTo(BigDecimal.ZERO) == 0) {
+                totalRevenue = ordersRevenue;
+            }
+        }
+
+        // Safety: profit should not exceed revenue (aggregate bound)
+        if (totalProfit.compareTo(totalRevenue) > 0) {
+            totalProfit = totalRevenue;
+        }
+
         BigDecimal netIncome = totalProfit.subtract(totalLoss);
 
         Map<String, Object> summary = new LinkedHashMap<>();
