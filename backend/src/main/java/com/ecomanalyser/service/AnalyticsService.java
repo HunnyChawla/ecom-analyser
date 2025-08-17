@@ -187,48 +187,28 @@ public class AnalyticsService {
     public List<Map<String, Object>> getOrderCountsByStatus(LocalDate start, LocalDate end) {
         try {
             System.out.println("getOrderCountsByStatus called with start: " + start + ", end: " + end);
-            
-            // Use the new method that provides month information and doesn't filter by date range
-            var rows = paymentRepository.getOrderCountsByStatusWithMonth();
-            System.out.println("Repository returned " + rows.size() + " rows");
-            
+            LocalDateTime s = start.atStartOfDay();
+            LocalDateTime e = end.plusDays(1).atStartOfDay().minusNanos(1);
+
+            var rows = paymentRepository.getOrderCountsByStatus(s, e);
+            System.out.println("Repository returned " + rows.size() + " rows for filtered range");
+
             if (rows.isEmpty()) {
-                System.out.println("No rows returned from repository - this usually means:");
-                System.out.println("1. No payments exist, OR");
-                System.out.println("2. All payments have NULL order_status (need to re-upload payments file)");
                 return new ArrayList<>();
             }
-            
-            // Log first few rows for debugging
-            for (int i = 0; i < Math.min(3, rows.size()); i++) {
-                Object[] row = rows.get(i);
-                System.out.println("Row " + i + ": Status=" + row[0] + ", Count=" + row[1] + ", Month=" + row[2] + ", Year=" + row[3]);
-            }
-            
-            // Group by status and aggregate counts across all months
-            Map<String, Long> statusToCount = new HashMap<>();
-            for (Object[] row : rows) {
-                String status = (String) row[0];
-                Long count = ((Number) row[1]).longValue();
-                statusToCount.merge(status, count, Long::sum);
-            }
-            
-            // Convert to result format
-            List<Map<String, Object>> result = statusToCount.entrySet().stream()
-                    .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
-                    .map(en -> {
-                        Map<String, Object> m = new LinkedHashMap<>();
-                        m.put("status", en.getKey());
-                        m.put("count", en.getValue());
-                        return m;
-                    })
-                    .toList();
-            
-            System.out.println("Returning " + result.size() + " items with aggregated counts");
+
+            List<Map<String, Object>> result = rows.stream().map(r -> {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("status", (String) r[0]);
+                m.put("count", ((Number) r[1]).longValue());
+                return m;
+            }).sorted((a, b) -> Long.compare((Long) b.get("count"), (Long) a.get("count")))
+            .toList();
+
             return result;
-        } catch (Exception e) {
-            System.err.println("Error in getOrderCountsByStatus: " + e.getMessage());
-            e.printStackTrace();
+        } catch (Exception ex) {
+            System.err.println("Error in getOrderCountsByStatus (filtered): " + ex.getMessage());
+            ex.printStackTrace();
             return new ArrayList<>();
         }
     }

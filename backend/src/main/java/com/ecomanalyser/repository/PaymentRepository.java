@@ -26,8 +26,7 @@ public interface PaymentRepository extends JpaRepository<PaymentEntity, Long> {
            "order by year desc, month desc, orderCount desc")
     List<Object[]> getOrderCountsByStatusWithMonth();
     
-    // Keep the old method for backward compatibility but mark as deprecated
-    @Deprecated
+    // Filtered by date range
     @Query("select p.orderStatus, count(distinct p.orderId) as orderCount from PaymentEntity p where p.paymentDateTime between :start and :end and p.orderStatus is not null group by p.orderStatus order by orderCount desc")
     List<Object[]> getOrderCountsByStatus(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
 }
