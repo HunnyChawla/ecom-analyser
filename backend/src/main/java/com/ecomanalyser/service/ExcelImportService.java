@@ -326,11 +326,24 @@ public class ExcelImportService {
                     String listingPriceInclTaxesStr = getCellAny(row, hmap, List.of("Listing Price (Incl. taxes)"), null);
                     BigDecimal listingPriceInclTaxes = parseBigDecimal(listingPriceInclTaxesStr);
                     
+                    // Enrich with order SKU and order date
+                    String skuForOrder = null;
+                    LocalDateTime orderDateTimeVal = null;
+                    try {
+                        var orderOpt = orderRepository.findByOrderId(orderId);
+                        if (orderOpt.isPresent()) {
+                            skuForOrder = orderOpt.get().getSku();
+                            orderDateTimeVal = orderOpt.get().getOrderDateTime();
+                        }
+                    } catch (Exception ignored) {}
+
                     toSave.add(PaymentEntity.builder()
                             .paymentId(paymentId)
                             .orderId(orderId)
+                            .sku(skuForOrder)
                             .amount(amount)
-                            .paymentDateTime(date.atStartOfDay())
+                            .paymentDateTime(date != null ? date.atStartOfDay() : null)
+                            .orderDateTime(orderDateTimeVal)
                             .orderStatus(orderStatus)
                             .transactionId(transactionId)
                             .finalSettlementAmount(finalSettlementAmount)
@@ -384,7 +397,9 @@ public class ExcelImportService {
                             existing.setPaymentId(payment.getPaymentId());
                             existing.setAmount(payment.getAmount());
                             existing.setPaymentDateTime(payment.getPaymentDateTime());
+                            existing.setOrderDateTime(payment.getOrderDateTime());
                             existing.setOrderStatus(payment.getOrderStatus());
+                            existing.setSku(payment.getSku());
                             existing.setTransactionId(payment.getTransactionId());
                             existing.setFinalSettlementAmount(payment.getFinalSettlementAmount());
                             existing.setPriceType(payment.getPriceType());
@@ -579,11 +594,24 @@ public class ExcelImportService {
                     continue;
                 }
                 
+                // Enrich with order SKU and order date
+                String skuForOrder = null;
+                LocalDateTime orderDateTimeVal = null;
+                try {
+                    var orderOpt = orderRepository.findByOrderId(orderId);
+                    if (orderOpt.isPresent()) {
+                        skuForOrder = orderOpt.get().getSku();
+                        orderDateTimeVal = orderOpt.get().getOrderDateTime();
+                    }
+                } catch (Exception ignored) {}
+
                 toSave.add(PaymentEntity.builder()
                         .paymentId(paymentId)
                         .orderId(orderId)
+                        .sku(skuForOrder)
                         .amount(amount)
-                        .paymentDateTime(date.atStartOfDay())
+                        .paymentDateTime(date != null ? date.atStartOfDay() : null)
+                        .orderDateTime(orderDateTimeVal)
                         .orderStatus(orderStatus)
                         .build());
             }
@@ -604,7 +632,9 @@ public class ExcelImportService {
                     existing.setPaymentId(payment.getPaymentId());
                     existing.setAmount(payment.getAmount());
                     existing.setPaymentDateTime(payment.getPaymentDateTime());
+                    existing.setOrderDateTime(payment.getOrderDateTime());
                     existing.setOrderStatus(payment.getOrderStatus());
+                    existing.setSku(payment.getSku());
                     paymentRepository.save(existing);
                     savedCount++;
                 } else {

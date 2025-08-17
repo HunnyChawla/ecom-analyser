@@ -25,11 +25,18 @@ public class PaymentEntity {
     @Column(name = "order_id", nullable = false)
     private String orderId;
 
+    // Denormalized fields for faster analytics joins
+    @Column(name = "sku")
+    private String sku;
+
     @Column(nullable = false)
     private BigDecimal amount;
 
     @Column(name = "payment_date_time", nullable = false)
     private LocalDateTime paymentDateTime;
+
+    @Column(name = "order_date_time")
+    private LocalDateTime orderDateTime;
     
     @Column(name = "order_status", nullable = false)
     private String orderStatus;
