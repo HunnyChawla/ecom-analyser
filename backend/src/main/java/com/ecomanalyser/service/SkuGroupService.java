@@ -287,6 +287,34 @@ public class SkuGroupService {
         return map;
     }
     
+    /**
+     * Build rows for the SKU group template including all grouped and ungrouped SKUs
+     * Row format: [groupName, sku, purchasePrice, description]
+     */
+    public List<String[]> buildSkuGroupTemplateRows() {
+        List<String[]> rows = new ArrayList<>();
+        // Existing groups with their SKUs
+        var groups = skuGroupRepository.findAll();
+        for (SkuGroupEntity group : groups) {
+            var skus = skuGroupMappingRepository.findSkusByGroupId(group.getId());
+            for (String sku : skus) {
+                rows.add(new String[] {
+                        group.getGroupName(),
+                        sku,
+                        group.getPurchasePrice() != null ? group.getPurchasePrice().toPlainString() : "",
+                        group.getDescription() != null ? group.getDescription() : ""
+                });
+            }
+        }
+        
+        // Ungrouped SKUs (leave group and price empty so users can fill in)
+        var ungrouped = getUngroupedSkus();
+        for (String sku : ungrouped) {
+            rows.add(new String[] { "", sku, "", "" });
+        }
+        return rows;
+    }
+    
     // Inner class for analytics data
     private static class GroupAnalytics {
         String groupName;

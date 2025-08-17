@@ -145,32 +145,28 @@ public class SkuGroupController {
             h.createCell(1).setCellValue("SKU");
             h.createCell(2).setCellValue("Purchase Price");
             h.createCell(3).setCellValue("Description");
-            
+
             int r = 1;
-            Row row1 = sh.createRow(r++);
-            row1.createCell(0).setCellValue("Pillow Cover Pack of 2");
-            row1.createCell(1).setCellValue("2-PILLOW-COVER-WHITE-PC-18-28");
-            row1.createCell(2).setCellValue(50.00);
-            row1.createCell(3).setCellValue("Premium pillow covers in various colors");
-            
-            Row row2 = sh.createRow(r++);
-            row2.createCell(0).setCellValue("Pillow Cover Pack of 2");
-            row2.createCell(1).setCellValue("2-PC-PILLOW-C-COFFFEE-STRIP");
-            row2.createCell(2).setCellValue(50.00);
-            row2.createCell(3).setCellValue("Premium pillow covers in various colors");
-            
-            Row row3 = sh.createRow(r++);
-            row3.createCell(0).setCellValue("Bed Sheets");
-            row3.createCell(1).setCellValue("DF-STRIPWINE-90*100");
-            row3.createCell(2).setCellValue(172.00);
-            row3.createCell(3).setCellValue("High-quality bed sheets");
-            
-            Row row4 = sh.createRow(r++);
-            row4.createCell(0).setCellValue("Bed Sheets");
-            row4.createCell(1).setCellValue("1SF-MAROON-FLY-MULTICOLUR");
-            row4.createCell(2).setCellValue(150.00);
-            row4.createCell(3).setCellValue("Premium cotton bed sheets");
-            
+            var rows = skuGroupService.buildSkuGroupTemplateRows();
+            for (String[] vals : rows) {
+                Row row = sh.createRow(r++);
+                row.createCell(0).setCellValue(vals.length > 0 ? vals[0] : "");
+                row.createCell(1).setCellValue(vals.length > 1 ? vals[1] : "");
+                if (vals.length > 2 && vals[2] != null && !vals[2].isBlank()) {
+                    try {
+                        row.createCell(2).setCellValue(Double.parseDouble(vals[2]));
+                    } catch (NumberFormatException e) {
+                        row.createCell(2).setCellValue(vals[2]);
+                    }
+                } else {
+                    row.createCell(2).setCellValue(0d);
+                }
+                row.createCell(3).setCellValue(vals.length > 3 ? vals[3] : "");
+            }
+
+            // Autofit first few columns for readability
+            for (int c = 0; c <= 3; c++) sh.autoSizeColumn(c);
+
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             wb.write(out);
             byte[] bytes = out.toByteArray();
