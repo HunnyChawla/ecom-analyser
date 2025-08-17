@@ -317,29 +317,28 @@ public class AnalyticsService {
         LocalDateTime s = start.atStartOfDay();
         LocalDateTime e = end.plusDays(1).atStartOfDay().minusNanos(1);
 
-        // Total revenue from normalized payments first (preferred), fallback to raw payments table
-        BigDecimal totalRevenue = BigDecimal.ZERO;
+        // Derive gross revenue from orders (ensures revenue >= profit)
+        BigDecimal totalRevenue = orderRepository.findByOrderDateTimeBetween(s, e)
+                .stream()
+                .map(o -> (o.getSellingPrice() == null || o.getQuantity() == null)
+                        ? BigDecimal.ZERO
+                        : o.getSellingPrice().multiply(BigDecimal.valueOf(o.getQuantity())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // Compute payments received separately (for reference/UI if needed)
+        BigDecimal paymentsReceived = BigDecimal.ZERO;
         try {
             var normalizedPaymentRepo = applicationContext.getBean(com.ecomanalyser.repository.NormalizedPaymentRepository.class);
             var np = normalizedPaymentRepo.findByPaymentDateBetween(start, end);
-            totalRevenue = np.stream()
+            paymentsReceived = np.stream()
                     .map(p -> p.getAmount() == null ? BigDecimal.ZERO : p.getAmount())
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
         } catch (Exception ignored) {
         }
-        if (totalRevenue.compareTo(BigDecimal.ZERO) == 0) {
-            totalRevenue = paymentRepository.findByPaymentDateTimeBetween(s, e)
+        if (paymentsReceived.compareTo(BigDecimal.ZERO) == 0) {
+            paymentsReceived = paymentRepository.findByPaymentDateTimeBetween(s, e)
                     .stream()
                     .map(p -> p.getAmount() == null ? BigDecimal.ZERO : p.getAmount())
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-        }
-        // Final fallback: derive revenue from orders if no payment data exists
-        if (totalRevenue.compareTo(BigDecimal.ZERO) == 0) {
-            totalRevenue = orderRepository.findByOrderDateTimeBetween(s, e)
-                    .stream()
-                    .map(o -> (o.getSellingPrice() == null || o.getQuantity() == null)
-                            ? BigDecimal.ZERO
-                            : o.getSellingPrice().multiply(BigDecimal.valueOf(o.getQuantity())))
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
         }
 
@@ -375,6 +374,7 @@ public class AnalyticsService {
         summary.put("totalOrders", totalOrders);
         summary.put("totalLoss", totalLoss);
         summary.put("netIncome", netIncome);
+        summary.put("paymentsReceived", paymentsReceived);
         return summary;
     }
 }
