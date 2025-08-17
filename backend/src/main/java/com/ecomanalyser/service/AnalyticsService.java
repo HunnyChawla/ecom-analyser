@@ -358,7 +358,7 @@ public class AnalyticsService {
                 .collect(Collectors.toMap(OrderEntity::getOrderId, o -> o, (a,b) -> a));
 
         var paymentsInRange = paymentRepository.findByPaymentDateTimeBetween(s, e);
-        paymentsInRange.forEach(p -> {
+        for (var p : paymentsInRange) {
             var orderOpt = Optional.ofNullable(orderById.get(p.getOrderId()));
             BigDecimal revenue = p.getAmount() == null ? BigDecimal.ZERO : p.getAmount();
             BigDecimal cost = BigDecimal.ZERO;
@@ -375,7 +375,7 @@ public class AnalyticsService {
             } else {
                 totalLoss = totalLoss.add(profit.abs());
             }
-        });
+        }
 
         BigDecimal netIncome = totalProfit.subtract(totalLoss);
 
