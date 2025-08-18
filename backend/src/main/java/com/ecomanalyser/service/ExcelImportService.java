@@ -737,6 +737,29 @@ public class ExcelImportService {
         return savedCount;
     }
 
+    private int importSkuPricesCsv(MultipartFile file) throws Exception {
+        List<SkuPriceEntity> toSave = new ArrayList<>();
+        try (Reader reader = new InputStreamReader(file.getInputStream());
+             CSVParser parser = CSVFormat.DEFAULT.withFirstRecordAsHeader().parse(reader)) {
+            var headerMap = parser.getHeaderMap();
+            for (CSVRecord r : parser) {
+                String sku = getAny(r, headerMap, List.of("sku", "SKU", "Sku"), 0);
+                if (sku == null || sku.isBlank()) continue;
+                String priceStr = getAny(r, headerMap, List.of("purchasePrice", "purchase price", "price"), 1);
+                BigDecimal purchasePrice = parseBigDecimal(priceStr);
+                if (purchasePrice == null) purchasePrice = BigDecimal.ZERO;
+                toSave.add(SkuPriceEntity.builder()
+                        .sku(sku.trim())
+                        .purchasePrice(purchasePrice)
+                        .updatedAt(LocalDateTime.now())
+                        .build());
+            }
+        }
+        skuPriceRepository.deleteAllInBatch();
+        skuPriceRepository.saveAll(toSave);
+        return toSave.size();
+    }
+
     private String getAny(CSVRecord r, Map<String, Integer> headerMap, List<String> headerSynonyms, Integer fallbackIndex) {
         for (String h : headerSynonyms) {
             Integer idx = findHeaderIndex(headerMap, h);
