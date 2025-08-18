@@ -8,21 +8,16 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "merged_orders", uniqueConstraints = {
-        @UniqueConstraint(name = "uk_merged_orders_order_id", columnNames = {"order_id"})
-})
+@Table(name = "merged_orders")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 public class MergedOrderPaymentEntity {
+    // 1. Order id (primary key)
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    // 1. Order id (unique key)
-    @Column(name = "order_id", nullable = false, unique = true)
+    @Column(name = "order_id", nullable = false)
     private String orderId;
 
     // 2. Order Amount (gross): sellingPrice * quantity
