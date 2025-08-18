@@ -388,7 +388,7 @@ public class DataMergeService {
                 List<PaymentEntity> sorted = new ArrayList<>(orderPayments);
                 sorted.sort(Comparator.comparing(PaymentEntity::getPaymentDateTime, Comparator.nullsLast(Comparator.naturalOrder())).reversed());
                 for (PaymentEntity p : sorted) {
-                    if (p.getOrderStatus() != null && !p.getOrderStatus().isBlank()) {
+                    if (p.getOrderStatus() != null && !p.getOrderStatus().isBlank() && !"unknown".equalsIgnoreCase(p.getOrderStatus())) {
                         resolvedStatus = p.getOrderStatus();
                         break;
                     }
@@ -555,13 +555,13 @@ public class DataMergeService {
         String paymentStatus = payment.getOrderStatus();
         String orderStatus = order != null ? order.getReasonForCreditEntry() : null;
         
-        if (paymentStatus != null && !paymentStatus.trim().isEmpty()) {
-            // Payment status is not blank - use it as final status
+        if (paymentStatus != null && !paymentStatus.trim().isEmpty() && !"unknown".equalsIgnoreCase(paymentStatus)) {
+            // Payment status is not blank and not "unknown" - use it as final status
             merged.setFinalStatus(paymentStatus);
             merged.setStatusSource("PAYMENT_FILE");
             log.debug("Using payment status for order {}: {}", merged.getOrderId(), paymentStatus);
         } else if (orderStatus != null && !orderStatus.trim().isEmpty()) {
-            // Payment status is blank, use order status
+            // Payment status is blank/unknown, use order status
             merged.setFinalStatus(orderStatus);
             merged.setStatusSource("ORDER_FILE");
             log.debug("Using order status for order {}: {}", merged.getOrderId(), orderStatus);
