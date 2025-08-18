@@ -329,8 +329,17 @@ public class SkuGroupService {
     /**
      * Get all SKU mappings
      */
-    public List<SkuGroupMappingEntity> getSkuMappings() {
-        return skuGroupMappingRepository.findAllWithGroupDetails();
+    public List<Map<String, Object>> getSkuMappings() {
+        List<SkuGroupMappingEntity> mappings = skuGroupMappingRepository.findAllWithGroupDetails();
+        
+        return mappings.stream().map(mapping -> {
+            Map<String, Object> dto = new HashMap<>();
+            dto.put("id", mapping.getId());
+            dto.put("skuId", mapping.getSku());
+            dto.put("groupId", mapping.getSkuGroup().getId());
+            dto.put("groupName", mapping.getSkuGroup().getGroupName());
+            return dto;
+        }).collect(Collectors.toList());
     }
 
     /**

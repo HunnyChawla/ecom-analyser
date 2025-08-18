@@ -1,5 +1,6 @@
 package com.ecomanalyser.domain;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -25,6 +26,7 @@ public class SkuGroupMappingEntity {
     
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "group_id", nullable = false)
+    @JsonIgnore
     private SkuGroupEntity skuGroup;
     
     @Column(name = "created_at")
