@@ -35,6 +35,14 @@ public interface MergedOrderPaymentRepository extends JpaRepository<MergedOrderP
     // Get all data from merged_orders table
     @Query("SELECT m FROM MergedOrderPaymentEntity m ORDER BY m.orderDate DESC")
     List<MergedOrderPaymentEntity> findAllFromMergedOrders();
+    
+    // Find return orders for tracking (RETURN and RTO statuses)
+    @Query("SELECT m.orderId, m.skuId, m.quantity, ABS(m.settlementAmount) as returnAmount, m.orderStatus, m.orderDate " +
+           "FROM MergedOrderPaymentEntity m " +
+           "WHERE m.orderStatus IN ('RETURN', 'RTO') " +
+           "AND m.settlementAmount < 0 " +
+           "ORDER BY m.orderDate DESC")
+    List<Object[]> findReturnOrdersForTracking();
 }
 
 

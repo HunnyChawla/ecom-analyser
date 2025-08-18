@@ -43,8 +43,15 @@ const LossAnalysisTable: React.FC = () => {
       const startDate = new Date(selectedYear, selectedMonth - 1, 1);
       const endDate = new Date(selectedYear, selectedMonth, 0);
       
-      const startStr = startDate.toISOString().split('T')[0];
-      const endStr = endDate.toISOString().split('T')[0];
+      // Use toLocaleDateString to avoid timezone issues
+      const startStr = startDate.toLocaleDateString('en-CA');
+      const endStr = endDate.toLocaleDateString('en-CA');
+      
+      // Debug logging to verify date ranges
+      console.log(`Loss Analysis - Selected month: ${selectedMonth}, year: ${selectedYear}`);
+      console.log(`Start date: ${startDate.toDateString()}`);
+      console.log(`End date: ${endDate.toDateString()}`);
+      console.log(`Final date range: ${startStr} to ${endStr}`);
       
       const response = await api.get(`/api/analytics/loss-orders?start=${startStr}&end=${endStr}`);
       

@@ -364,10 +364,10 @@ public class AnalyticsService {
             long totalQuantity = 0;
             
             for (MergedOrderPaymentEntity merged : mergedOrders) {
-                if (merged.getSettlementAmount() == null || merged.getSettlementAmount().compareTo(BigDecimal.ZERO) <= 0 ||
+                if (merged.getSettlementAmount() == null || merged.getSettlementAmount().compareTo(BigDecimal.ZERO) == 0 ||
                     merged.getSkuId() == null || merged.getQuantity() == null ||
                     !"DELIVERED".equals(merged.getOrderStatus())) {
-                    continue; // Skip invalid or non-delivered orders
+                    continue; // Skip invalid, zero settlement, or non-delivered orders
                 }
                 
                 try {
@@ -441,6 +441,144 @@ public class AnalyticsService {
         }
     }
 
+    public Map<String, Object> getReturnAnalysis(LocalDate start, LocalDate end) {
+        try {
+            var mergedOrders = mergedOrderRepository.findByOrderDateBetween(start, end);
+            List<Map<String, Object>> returnOrders = new ArrayList<>();
+            
+            BigDecimal totalReturnAmount = BigDecimal.ZERO;
+            BigDecimal totalCogs = BigDecimal.ZERO;
+            BigDecimal totalLoss = BigDecimal.ZERO;
+            long totalQuantity = 0;
+            Set<String> unexpectedStatuses = new HashSet<>();
+            
+            for (MergedOrderPaymentEntity merged : mergedOrders) {
+                if (merged.getSettlementAmount() == null || 
+                    merged.getSettlementAmount().compareTo(BigDecimal.ZERO) >= 0 ||
+                    merged.getSkuId() == null || merged.getQuantity() == null ||
+                    "DELIVERED".equals(merged.getOrderStatus())) {
+                    continue; // Skip invalid, non-negative settlement, or delivered orders
+                }
+                
+                try {
+                    // Get purchase price for this SKU
+                    BigDecimal purchasePrice = getPurchasePriceForSku(merged.getSkuId());
+                    
+                    if (purchasePrice.compareTo(BigDecimal.ZERO) > 0) {
+                        // Calculate COGS: Purchase Price × Quantity
+                        BigDecimal cogs = purchasePrice.multiply(BigDecimal.valueOf(merged.getQuantity()));
+                        BigDecimal returnAmount = merged.getSettlementAmount().abs(); // Convert negative to positive
+                        
+                        // Loss calculation: If we received the product, return amount = loss
+                        // If we didn't receive it, loss = COGS (cost of goods)
+                        BigDecimal loss;
+                        if (isProductReceived(merged.getOrderStatus())) {
+                            loss = returnAmount; // Return amount is the actual loss
+                        } else {
+                            loss = cogs; // Full COGS is loss for cancellations/rejections
+                        }
+                        
+                        // Check if status is unexpected (not a typical return status)
+                        String status = merged.getOrderStatus();
+                        if (status != null && !isExpectedReturnStatus(status)) {
+                            unexpectedStatuses.add(status);
+                        }
+                        
+                        Map<String, Object> orderData = new LinkedHashMap<>();
+                        orderData.put("orderId", merged.getOrderId());
+                        orderData.put("skuId", merged.getSkuId());
+                        orderData.put("quantity", merged.getQuantity());
+                        orderData.put("settlementAmount", merged.getSettlementAmount());
+                        orderData.put("returnAmount", returnAmount);
+                        orderData.put("purchasePrice", purchasePrice);
+                        orderData.put("cogs", cogs);
+                        orderData.put("loss", loss);
+                        orderData.put("orderStatus", merged.getOrderStatus());
+                        orderData.put("orderDate", merged.getOrderDate());
+                        orderData.put("isUnexpectedStatus", !isExpectedReturnStatus(status));
+                        
+                        returnOrders.add(orderData);
+                        
+                        // Update totals
+                        totalReturnAmount = totalReturnAmount.add(returnAmount);
+                        totalCogs = totalCogs.add(cogs);
+                        totalLoss = totalLoss.add(loss);
+                        totalQuantity += merged.getQuantity();
+                    }
+                } catch (Exception e) {
+                    log.warn("Error calculating return for SKU {}: {}", merged.getSkuId(), e.getMessage());
+                }
+            }
+            
+            // Sort by unexpected status first, then by return amount (highest first)
+            returnOrders.sort((a, b) -> {
+                Boolean unexpectedA = (Boolean) a.get("isUnexpectedStatus");
+                Boolean unexpectedB = (Boolean) b.get("isUnexpectedStatus");
+                
+                // First sort by unexpected status (true comes first)
+                if (!unexpectedA.equals(unexpectedB)) {
+                    return unexpectedB.compareTo(unexpectedA);
+                }
+                
+                // Then sort by return amount (highest first)
+                BigDecimal returnA = (BigDecimal) a.get("returnAmount");
+                BigDecimal returnB = (BigDecimal) b.get("returnAmount");
+                return returnB.compareTo(returnA);
+            });
+            
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("orders", returnOrders);
+            result.put("summary", Map.of(
+                "totalOrders", returnOrders.size(),
+                "totalQuantity", totalQuantity,
+                "totalReturnAmount", totalReturnAmount,
+                "totalCogs", totalCogs,
+                "totalLoss", totalLoss,
+                "unexpectedStatuses", new ArrayList<>(unexpectedStatuses)
+            ));
+            
+            return result;
+        } catch (Exception e) {
+            log.error("Error getting return analysis: {}", e.getMessage(), e);
+            return Map.of(
+                "orders", new ArrayList<>(),
+                "summary", Map.of(
+                    "totalOrders", 0,
+                    "totalQuantity", 0L,
+                    "totalReturnAmount", BigDecimal.ZERO,
+                    "totalCogs", BigDecimal.ZERO,
+                    "totalLoss", BigDecimal.ZERO,
+                    "unexpectedStatuses", new ArrayList<>()
+                )
+            );
+        }
+    }
+    
+    private boolean isExpectedReturnStatus(String status) {
+        if (status == null) return false;
+        
+        // Expected return-related statuses
+        String upperStatus = status.toUpperCase();
+        return upperStatus.contains("RETURN") || 
+               upperStatus.contains("RTO") || 
+               upperStatus.contains("CANCELLED") || 
+               upperStatus.contains("REFUND") ||
+               upperStatus.contains("REJECTED") ||
+               upperStatus.contains("FAILED");
+    }
+    
+    private boolean isProductReceived(String status) {
+        if (status == null) return false;
+        
+        // Statuses where we actually received/handled the product
+        String upperStatus = status.toUpperCase();
+        return upperStatus.contains("RETURN") || 
+               upperStatus.contains("RTO") || 
+               upperStatus.contains("EXCHANGE") ||
+               upperStatus.contains("SHIPPED") ||
+               upperStatus.contains("REFUND");
+    }
+
     public LocalDate aggregateDate(LocalDate date, Aggregation agg) {
         return switch (agg) {
             case DAY -> date;
@@ -468,19 +606,25 @@ public class AnalyticsService {
         
         BigDecimal totalRevenue = BigDecimal.ZERO;
         BigDecimal totalProfit = BigDecimal.ZERO;
+        BigDecimal totalLossFromDelivered = BigDecimal.ZERO;
+        BigDecimal totalLossFromReturns = BigDecimal.ZERO;
         BigDecimal totalLoss = BigDecimal.ZERO;
         long totalOrders = mergedOrders.size();
 
         // Calculate revenue and profit/loss from merged data
         for (MergedOrderPaymentEntity merged : mergedOrders) {
             BigDecimal settlementAmount = merged.getSettlementAmount() != null ? merged.getSettlementAmount() : BigDecimal.ZERO;
-            totalRevenue = totalRevenue.add(settlementAmount);
             
-            // Calculate actual profit/loss: Revenue - Cost of Goods Sold
-            BigDecimal profit = BigDecimal.ZERO;
-            BigDecimal loss = BigDecimal.ZERO;
+            // Add positive settlement amounts to revenue
+            if (settlementAmount.compareTo(BigDecimal.ZERO) > 0) {
+                totalRevenue = totalRevenue.add(settlementAmount);
+            }
             
-            if (merged.getSkuId() != null && merged.getQuantity() != null && settlementAmount.compareTo(BigDecimal.ZERO) > 0) {
+            // Calculate profit/loss for delivered items with positive settlement
+            if (merged.getSkuId() != null && merged.getQuantity() != null && 
+                settlementAmount.compareTo(BigDecimal.ZERO) > 0 && 
+                "DELIVERED".equals(merged.getOrderStatus())) {
+                
                 try {
                     // Get purchase price for this SKU
                     BigDecimal purchasePrice = getPurchasePriceForSku(merged.getSkuId());
@@ -495,7 +639,7 @@ public class AnalyticsService {
                         if (netProfit.signum() > 0) {
                             totalProfit = totalProfit.add(netProfit);
                         } else if (netProfit.signum() < 0) {
-                            totalLoss = totalLoss.add(netProfit.abs());
+                            totalLossFromDelivered = totalLossFromDelivered.add(netProfit.abs());
                         }
                     } else {
                         log.debug("SKU {} has no purchase price, skipping profit calculation", merged.getSkuId());
@@ -504,8 +648,41 @@ public class AnalyticsService {
                     log.warn("Error calculating profit for SKU {}: {}", merged.getSkuId(), e.getMessage());
                 }
             }
+            
+            // Calculate loss from returns (negative settlement amounts)
+            if (merged.getSkuId() != null && merged.getQuantity() != null && 
+                settlementAmount.compareTo(BigDecimal.ZERO) < 0) {
+                
+                try {
+                    // Get purchase price for this SKU
+                    BigDecimal purchasePrice = getPurchasePriceForSku(merged.getSkuId());
+                    
+                    if (purchasePrice.compareTo(BigDecimal.ZERO) > 0) {
+                        // Calculate COGS: Purchase Price × Quantity
+                        BigDecimal cogs = purchasePrice.multiply(BigDecimal.valueOf(merged.getQuantity()));
+                        BigDecimal returnAmount = settlementAmount.abs(); // Convert negative to positive
+                        
+                        // Loss calculation: If we received the product, return amount = loss
+                        // If we didn't receive it, loss = COGS (cost of goods)
+                        BigDecimal loss;
+                        if (isProductReceived(merged.getOrderStatus())) {
+                            loss = returnAmount; // Return amount is the actual loss
+                        } else {
+                            loss = cogs; // Full COGS is loss for cancellations/rejections
+                        }
+                        
+                        totalLossFromReturns = totalLossFromReturns.add(loss);
+                    } else {
+                        log.debug("SKU {} has no purchase price, skipping return loss calculation", merged.getSkuId());
+                    }
+                } catch (Exception e) {
+                    log.warn("Error calculating return loss for SKU {}: {}", merged.getSkuId(), e.getMessage());
+                }
+            }
         }
 
+        // Total loss combines both delivered item losses and return losses
+        totalLoss = totalLossFromDelivered.add(totalLossFromReturns);
         BigDecimal netIncome = totalProfit.subtract(totalLoss);
 
         Map<String, Object> summary = new LinkedHashMap<>();
@@ -516,10 +693,63 @@ public class AnalyticsService {
         summary.put("totalRevenue", totalRevenue);
         summary.put("totalProfit", totalProfit);
         summary.put("totalOrders", totalOrders);
+        summary.put("totalLossFromDelivered", totalLossFromDelivered);
+        summary.put("totalLossFromReturns", totalLossFromReturns);
         summary.put("totalLoss", totalLoss);
         summary.put("netIncome", netIncome);
         summary.put("paymentsReceived", totalRevenue);
         return summary;
+    }
+
+    /**
+     * Get comprehensive loss metrics for dashboard
+     * Returns total losses from delivered items and returns combined
+     */
+    public Map<String, Object> getComprehensiveLossMetrics(LocalDate start, LocalDate end) {
+        try {
+            // Get loss orders (delivered items with losses)
+            Map<String, Object> lossOrdersResult = getLossOrders(start, end);
+            Map<String, Object> lossSummary = (Map<String, Object>) lossOrdersResult.get("summary");
+            
+            // Get return analysis (returns with losses)
+            Map<String, Object> returnAnalysisResult = getReturnAnalysis(start, end);
+            Map<String, Object> returnSummary = (Map<String, Object>) returnAnalysisResult.get("summary");
+            
+            // Extract values safely
+            BigDecimal lossFromDelivered = (BigDecimal) lossSummary.get("totalLoss");
+            BigDecimal lossFromReturns = (BigDecimal) returnSummary.get("totalLoss");
+            
+            if (lossFromDelivered == null) lossFromDelivered = BigDecimal.ZERO;
+            if (lossFromReturns == null) lossFromReturns = BigDecimal.ZERO;
+            
+            BigDecimal totalLoss = lossFromDelivered.add(lossFromReturns);
+            
+            Map<String, Object> metrics = new LinkedHashMap<>();
+            metrics.put("startDate", start);
+            metrics.put("endDate", end);
+            metrics.put("lossFromDelivered", lossFromDelivered);
+            metrics.put("lossFromReturns", lossFromReturns);
+            metrics.put("totalLoss", totalLoss);
+            metrics.put("deliveredLossOrders", lossSummary.get("totalOrders"));
+            metrics.put("returnLossOrders", returnSummary.get("totalOrders"));
+            metrics.put("totalLossOrders", ((Number) lossSummary.get("totalOrders")).intValue() + ((Number) returnSummary.get("totalOrders")).intValue());
+            
+            return metrics;
+            
+        } catch (Exception e) {
+            log.error("Error getting comprehensive loss metrics: {}", e.getMessage(), e);
+            Map<String, Object> errorMetrics = new LinkedHashMap<>();
+            errorMetrics.put("startDate", start);
+            errorMetrics.put("endDate", end);
+            errorMetrics.put("lossFromDelivered", BigDecimal.ZERO);
+            errorMetrics.put("lossFromReturns", BigDecimal.ZERO);
+            errorMetrics.put("totalLoss", BigDecimal.ZERO);
+            errorMetrics.put("deliveredLossOrders", 0);
+            errorMetrics.put("returnLossOrders", 0);
+            errorMetrics.put("totalLossOrders", 0);
+            errorMetrics.put("error", e.getMessage());
+            return errorMetrics;
+        }
     }
 
 

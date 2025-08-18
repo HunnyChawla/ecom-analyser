@@ -4,6 +4,8 @@ import UploadData from './pages/UploadData'
 import SkuGroupManagement from './pages/SkuGroupManagement'
 import DataMerge from './pages/DataMerge'
 import LossAnalysis from './pages/LossAnalysis'
+import ReturnAnalysis from './pages/ReturnAnalysis'
+import ReturnTracking from './pages/ReturnTracking'
 
 function App() {
   return (
@@ -17,7 +19,9 @@ function App() {
               <NavLink to="/upload" className={({isActive}) => isActive ? 'font-semibold' : ''}>Upload</NavLink>
               <NavLink to="/sku-groups" className={({isActive}) => isActive ? 'font-semibold' : ''}>SKU Groups</NavLink>
               <NavLink to="/data-merge" className={({isActive}) => isActive ? 'font-semibold' : ''}>Data Merge</NavLink>
-              <NavLink to="/loss-analysis" className={({isActive}) => isActive ? 'font-semibold' : ''}>Loss Analysis</NavLink>
+                                        <NavLink to="/loss-analysis" className={({isActive}) => isActive ? 'font-semibold' : ''}>Loss Analysis</NavLink>
+                          <NavLink to="/return-analysis" className={({isActive}) => isActive ? 'font-semibold' : ''}>Return Analysis</NavLink>
+                          <NavLink to="/return-tracking" className={({isActive}) => isActive ? 'font-semibold' : ''}>Return Tracking</NavLink>
             </nav>
           </div>
         </header>
@@ -27,7 +31,9 @@ function App() {
             <Route path="/upload" element={<UploadData/>} />
             <Route path="/sku-groups" element={<SkuGroupManagement/>} />
             <Route path="/data-merge" element={<DataMerge/>} />
-            <Route path="/loss-analysis" element={<LossAnalysis/>} />
+                                    <Route path="/loss-analysis" element={<LossAnalysis/>} />
+                        <Route path="/return-analysis" element={<ReturnAnalysis/>} />
+                        <Route path="/return-tracking" element={<ReturnTracking/>} />
           </Routes>
         </main>
       </div>

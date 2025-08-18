@@ -63,6 +63,7 @@ export default function Dashboard() {
   const [topProfit, setTopProfit] = useState<any[]>([])
   const [ordersByStatus, setOrdersByStatus] = useState<any[]>([])
   const [summary, setSummary] = useState<any | null>(null)
+  const [comprehensiveLoss, setComprehensiveLoss] = useState<any | null>(null)
 
   useEffect(() => {
     api.get('/api/analytics/top-ordered', { params: { start: startStr, end: endStr, limit: 10 }})
@@ -77,6 +78,9 @@ export default function Dashboard() {
     api.get('/api/analytics/monthly-summary', { params: { year, month }})
       .then(r => setSummary(r.data))
       .catch(() => setSummary(null))
+    api.get('/api/analytics/comprehensive-loss-metrics', { params: { start: startStr, end: endStr }})
+      .then(r => setComprehensiveLoss(r.data))
+      .catch(() => setComprehensiveLoss(null))
   }, [startStr, endStr, year, month])
 
   return (
@@ -123,16 +127,38 @@ export default function Dashboard() {
           </span>
         </div>
         
-        <div className="bg-gradient-to-r from-red-500 to-red-600 rounded-lg shadow-lg p-6 text-white">
-          <h3 className="text-lg font-semibold mb-2">Loss Analysis</h3>
-          <p className="text-red-100 mb-4">Identify orders that resulted in losses despite successful delivery</p>
-          <a 
-            href="/loss-analysis" 
-            className="inline-flex items-center px-4 py-2 bg-white text-red-600 rounded-md font-medium hover:bg-red-50 transition-colors"
-          >
-            View Loss Analysis →
-          </a>
-        </div>
+                      <div className="bg-gradient-to-r from-red-500 to-red-600 rounded-lg shadow-lg p-6 text-white">
+                <h3 className="text-lg font-semibold mb-2">Loss Analysis</h3>
+                <p className="text-red-100 mb-4">Identify orders that resulted in losses despite successful delivery</p>
+                <a 
+                  href="/loss-analysis" 
+                  className="inline-flex items-center px-4 py-2 bg-white text-red-600 rounded-md font-medium hover:bg-red-50 transition-colors"
+                >
+                  View Loss Analysis →
+                </a>
+              </div>
+              
+              <div className="bg-gradient-to-r from-purple-500 to-purple-600 rounded-lg shadow-lg p-6 text-white">
+                <h3 className="text-lg font-semibold mb-2">Return Analysis</h3>
+                <p className="text-purple-100 mb-4">Analyze returns and orders with negative settlement amounts</p>
+                <a 
+                  href="/return-analysis" 
+                  className="inline-flex items-center px-4 py-2 bg-white text-purple-600 rounded-md font-medium hover:bg-purple-50 transition-colors"
+                >
+                  View Return Analysis →
+                </a>
+              </div>
+              
+              <div className="bg-gradient-to-r from-indigo-500 to-indigo-600 rounded-lg shadow-lg p-6 text-white">
+                <h3 className="text-lg font-semibold mb-2">Return Tracking</h3>
+                <p className="text-indigo-100 mb-4">Track return orders and manage receipt status</p>
+                <a 
+                  href="/return-tracking" 
+                  className="inline-flex items-center px-4 py-2 bg-white text-indigo-600 rounded-md font-medium hover:bg-indigo-50 transition-colors"
+                >
+                  View Return Tracking →
+                </a>
+              </div>
       </div>
 
       {/* Month/Year selector and KPI cards */}
@@ -157,6 +183,13 @@ export default function Dashboard() {
         <Kpi title="Total Orders" value={`${Number(summary?.totalOrders || 0).toLocaleString()}`}/>
         <Kpi title="Total Loss" value={`₹${Number(summary?.totalLoss || 0).toLocaleString()}`}/>
         <Kpi title="Net Income" value={`₹${Number(summary?.netIncome || 0).toLocaleString()}`}/>
+      </div>
+
+      {/* Detailed Loss Breakdown */}
+      <div className="grid md:grid-cols-3 gap-4 mb-8">
+        <Kpi title="Loss from Delivered Items" value={`₹${Number(comprehensiveLoss?.lossFromDelivered || 0).toLocaleString()}`}/>
+        <Kpi title="Loss from Returns" value={`₹${Number(comprehensiveLoss?.lossFromReturns || 0).toLocaleString()}`}/>
+        <Kpi title="Total Loss Orders" value={`${Number(comprehensiveLoss?.totalLossOrders || 0).toLocaleString()}`}/>
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">

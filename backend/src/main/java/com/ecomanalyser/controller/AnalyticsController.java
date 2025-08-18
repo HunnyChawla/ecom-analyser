@@ -119,6 +119,23 @@ public class AnalyticsController {
         }
     }
 
+    /**
+     * Get return analysis for a specific date range
+     * Returns orders with negative settlement amounts and non-delivered statuses
+     */
+    @GetMapping("/return-analysis")
+    public ResponseEntity<Map<String, Object>> getReturnAnalysis(
+            @RequestParam("start") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,
+            @RequestParam("end") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate end) {
+        try {
+            var result = analyticsService.getReturnAnalysis(start, end);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("Error getting return analysis: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
     @GetMapping("/profit-trend")
     public ChartResponse<TimeSeriesPoint> profitTrend(
             @RequestParam("start") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,
@@ -135,6 +152,23 @@ public class AnalyticsController {
             @RequestParam("agg") AnalyticsService.Aggregation agg
     ) {
         return analyticsService.lossTrend(start, end, agg);
+    }
+
+    /**
+     * Get comprehensive loss metrics for dashboard
+     * Returns total losses from delivered items and returns combined
+     */
+    @GetMapping("/comprehensive-loss-metrics")
+    public ResponseEntity<Map<String, Object>> getComprehensiveLossMetrics(
+            @RequestParam("start") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,
+            @RequestParam("end") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate end) {
+        try {
+            var result = analyticsService.getComprehensiveLossMetrics(start, end);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("Error getting comprehensive loss metrics: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
     }
 
     @GetMapping("/debug/orders")
