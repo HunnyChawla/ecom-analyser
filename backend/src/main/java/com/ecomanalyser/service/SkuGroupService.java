@@ -281,6 +281,96 @@ public class SkuGroupService {
                 .filter(sku -> !groupedSkus.contains(sku))
                 .collect(Collectors.toList());
     }
+
+    /**
+     * Create a new SKU group
+     */
+    @Transactional
+    public SkuGroupEntity createSkuGroup(String groupName, double purchasePrice, String description) {
+        SkuGroupEntity group = SkuGroupEntity.builder()
+                .groupName(groupName)
+                .purchasePrice(BigDecimal.valueOf(purchasePrice))
+                .description(description != null ? description : "")
+                .createdAt(LocalDateTime.now())
+                .build();
+        
+        return skuGroupRepository.save(group);
+    }
+
+    /**
+     * Update an existing SKU group
+     */
+    @Transactional
+    public SkuGroupEntity updateSkuGroup(Long id, String groupName, double purchasePrice, String description) {
+        SkuGroupEntity group = skuGroupRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("SKU group not found with id: " + id));
+        
+        group.setGroupName(groupName);
+        group.setPurchasePrice(BigDecimal.valueOf(purchasePrice));
+        group.setDescription(description != null ? description : "");
+        
+        return skuGroupRepository.save(group);
+    }
+
+    /**
+     * Delete an SKU group
+     */
+    @Transactional
+    public void deleteSkuGroup(Long id) {
+        // First delete all mappings for this group
+        List<SkuGroupMappingEntity> mappings = skuGroupMappingRepository.findBySkuGroupId(id);
+        skuGroupMappingRepository.deleteAll(mappings);
+        
+        // Then delete the group
+        skuGroupRepository.deleteById(id);
+    }
+
+    /**
+     * Get all SKU mappings
+     */
+    public List<SkuGroupMappingEntity> getSkuMappings() {
+        return skuGroupMappingRepository.findAll();
+    }
+
+    /**
+     * Add SKU to group
+     */
+    @Transactional
+    public SkuGroupMappingEntity addSkuToGroup(String skuId, Long groupId) {
+        SkuGroupEntity group = skuGroupRepository.findById(groupId)
+                .orElseThrow(() -> new RuntimeException("SKU group not found with id: " + groupId));
+        
+        // Check if SKU is already mapped
+        Optional<SkuGroupMappingEntity> existingMapping = skuGroupMappingRepository.findBySku(skuId);
+        if (existingMapping.isPresent()) {
+            throw new RuntimeException("SKU " + skuId + " is already mapped to a group");
+        }
+        
+        SkuGroupMappingEntity mapping = SkuGroupMappingEntity.builder()
+                .sku(skuId)
+                .skuGroup(group)
+                .build();
+        
+        return skuGroupMappingRepository.save(mapping);
+    }
+
+    /**
+     * Update SKU group assignment
+     */
+    @Transactional
+    public SkuGroupMappingEntity updateSkuGroupAssignment(String skuId, Long groupId) {
+        SkuGroupEntity group = skuGroupRepository.findById(groupId)
+                .orElseThrow(() -> new RuntimeException("SKU group not found with id: " + groupId));
+        
+        // Find existing mapping
+        SkuGroupMappingEntity existingMapping = skuGroupMappingRepository.findBySku(skuId)
+                .orElseThrow(() -> new RuntimeException("SKU mapping not found for: " + skuId));
+        
+        // Update the group
+        existingMapping.setSkuGroup(group);
+        
+        return skuGroupMappingRepository.save(existingMapping);
+    }
     
     // Helper methods
     private String getCellValue(org.apache.poi.ss.usermodel.Row row, int index) {
