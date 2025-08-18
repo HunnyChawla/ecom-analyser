@@ -8,7 +8,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "merged_orders")
+@Table(name = "merged_orders", uniqueConstraints = {
+        @UniqueConstraint(name = "uk_merged_orders_order_id", columnNames = {"order_id"})
+})
 @Getter
 @Setter
 @NoArgsConstructor

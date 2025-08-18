@@ -348,9 +348,23 @@ public class DataMergeService {
      */
     public int rebuildMergedTable() {
         List<MergedOrderData> merged = mergeOrdersAndPayments();
+        // keep only one record per orderId: prefer the one with latest payment date
+        Map<String, MergedOrderData> latestPerOrder = new HashMap<>();
+        for (MergedOrderData m : merged) {
+            MergedOrderData prev = latestPerOrder.get(m.getOrderId());
+            if (prev == null) {
+                latestPerOrder.put(m.getOrderId(), m);
+            } else {
+                LocalDateTime pdPrev = prev.getPaymentDateTime();
+                LocalDateTime pdCurr = m.getPaymentDateTime();
+                if (pdPrev == null || (pdCurr != null && pdCurr.isAfter(pdPrev))) {
+                    latestPerOrder.put(m.getOrderId(), m);
+                }
+            }
+        }
         mergedRepo.deleteAllInBatch();
         List<MergedOrderPaymentEntity> entities = new ArrayList<>();
-        for (MergedOrderData m : merged) {
+        for (MergedOrderData m : latestPerOrder.values()) {
             BigDecimal orderAmount = (m.getSellingPrice() != null && m.getQuantity() != null)
                     ? m.getSellingPrice().multiply(BigDecimal.valueOf(m.getQuantity()))
                     : null;
