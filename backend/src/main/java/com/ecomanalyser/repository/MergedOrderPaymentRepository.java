@@ -20,10 +20,10 @@ public interface MergedOrderPaymentRepository extends JpaRepository<MergedOrderP
     List<Object[]> findOrderStatusCounts(@Param("start") LocalDate start, @Param("end") LocalDate end);
     
     @Query("SELECT m.skuId, SUM(m.quantity) as totalQuantity FROM MergedOrderPaymentEntity m WHERE m.orderDate BETWEEN :start AND :end AND m.skuId IS NOT NULL GROUP BY m.skuId ORDER BY totalQuantity DESC")
-    List<Object[]> findTopOrderedSkus(@Param("start") LocalDate start, @Param("end") LocalDate end, @Param("limit") int limit);
+    List<Object[]> findTopOrderedSkus(@Param("start") LocalDate start, @Param("end") LocalDate end);
     
     @Query("SELECT m.skuId, SUM(m.settlementAmount) as totalProfit FROM MergedOrderPaymentEntity m WHERE m.orderDate BETWEEN :start AND :end AND m.settlementAmount > 0 GROUP BY m.skuId ORDER BY totalProfit DESC")
-    List<Object[]> findTopProfitableSkus(@Param("start") LocalDate start, @Param("end") LocalDate end, @Param("limit") int limit);
+    List<Object[]> findTopProfitableSkus(@Param("start") LocalDate start, @Param("end") LocalDate end);
 }
 
 

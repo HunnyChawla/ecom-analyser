@@ -61,13 +61,13 @@ public class AnalyticsService {
 
     public List<Map<String, Object>> topOrderedSkus(LocalDate start, LocalDate end, int limit) {
         try {
-            var rows = mergedOrderRepository.findTopOrderedSkus(start, end, limit);
+            var rows = mergedOrderRepository.findTopOrderedSkus(start, end);
             
             if (rows.isEmpty()) {
                 return new ArrayList<>();
             }
             
-            List<Map<String, Object>> result = rows.stream().map(r -> {
+            List<Map<String, Object>> result = rows.stream().limit(limit).map(r -> {
                 Map<String, Object> m = new LinkedHashMap<>();
                 m.put("sku", (String) r[0]);
                 
@@ -102,13 +102,13 @@ public class AnalyticsService {
 
     public List<Map<String, Object>> topProfitableSkus(LocalDate start, LocalDate end, int limit) {
         try {
-            var rows = mergedOrderRepository.findTopProfitableSkus(start, end, limit);
+            var rows = mergedOrderRepository.findTopProfitableSkus(start, end);
             
             if (rows.isEmpty()) {
                 return new ArrayList<>();
             }
             
-            List<Map<String, Object>> result = rows.stream().map(r -> {
+            List<Map<String, Object>> result = rows.stream().limit(limit).map(r -> {
                 Map<String, Object> m = new LinkedHashMap<>();
                 m.put("sku", (String) r[0]);
                 
