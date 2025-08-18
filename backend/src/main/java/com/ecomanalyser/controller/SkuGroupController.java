@@ -230,7 +230,7 @@ public class SkuGroupController {
      * Delete an SKU group
      */
     @DeleteMapping("/{id}")
-    public ResponseEntity<Map<String, Object>> deleteSkuGroup(@PathVariable Long id) {
+    public ResponseEntity<Map<String, Object>> deleteSkuGroup(@PathVariable("id") Long id) {
         try {
             skuGroupService.deleteSkuGroup(id);
             return ResponseEntity.ok(Map.of(

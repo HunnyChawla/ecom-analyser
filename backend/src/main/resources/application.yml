@@ -29,6 +29,7 @@ logging:
   level:
     com.ecomanalyser.service.ExcelImportService: DEBUG
     com.ecomanalyser: DEBUG
+    org.springframework.security: DEBUG
 
 kafka:
   enabled: true
