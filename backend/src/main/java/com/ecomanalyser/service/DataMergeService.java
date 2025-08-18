@@ -430,7 +430,7 @@ public class DataMergeService {
         merged.setPaymentDateTime(payment.getPaymentDateTime());
         merged.setOrderStatus(payment.getOrderStatus());
         merged.setTransactionId(payment.getTransactionId());
-        merged.setFinalSettlementAmount(payment.getFinalSettlementAmount());
+        merged.setFinalSettlementAmount(payment.getAmount());
         merged.setPriceType(payment.getPriceType());
         merged.setTotalSaleAmount(payment.getTotalSaleAmount());
         merged.setTotalSaleReturnAmount(payment.getTotalSaleReturnAmount());

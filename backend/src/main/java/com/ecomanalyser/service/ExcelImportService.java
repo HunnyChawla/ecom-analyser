@@ -403,7 +403,7 @@ public class ExcelImportService {
                             orderDateTimeVal = dispatchDate.atStartOfDay();
                         }
                     }
-
+                    
                     toSave.add(PaymentEntity.builder()
                             .paymentId(paymentId)
                             .orderId(orderId)
@@ -413,7 +413,7 @@ public class ExcelImportService {
                             .orderDateTime(orderDateTimeVal)
                             .orderStatus(orderStatus)
                             .transactionId(transactionId)
-                            .finalSettlementAmount(finalSettlementAmount)
+                            .amount(finalSettlementAmount)
                             .priceType(priceType)
                             .totalSaleAmount(totalSaleAmount)
                             .totalSaleReturnAmount(totalSaleReturnAmount)
@@ -468,7 +468,7 @@ public class ExcelImportService {
                             existing.setOrderStatus(payment.getOrderStatus());
                             existing.setSku(payment.getSku());
                             existing.setTransactionId(payment.getTransactionId());
-                            existing.setFinalSettlementAmount(payment.getFinalSettlementAmount());
+                            existing.setAmount(payment.getAmount());
                             existing.setPriceType(payment.getPriceType());
                             existing.setTotalSaleAmount(payment.getTotalSaleAmount());
                             existing.setTotalSaleReturnAmount(payment.getTotalSaleReturnAmount());
@@ -725,7 +725,7 @@ public class ExcelImportService {
                 LocalDate dispatchDate = parseToLocalDate(getAny(r, headerMap, List.of("dispatch date"), null));
                 BigDecimal productGstPercentage = null; try { productGstPercentage = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("product gst %"), null))); } catch (Exception ignored) {}
                 BigDecimal listingPriceInclTaxes = null; try { listingPriceInclTaxes = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("listing price (incl. taxes)"), null))); } catch (Exception ignored) {}
- 
+                
                 toSave.add(PaymentEntity.builder()
                         .paymentId(paymentId)
                         .orderId(orderId)
@@ -735,7 +735,7 @@ public class ExcelImportService {
                         .orderDateTime(orderDateTimeVal)
                         .orderStatus(orderStatus)
                         .transactionId(transactionId)
-                        .finalSettlementAmount(finalSettlementAmount)
+                        .amount(finalSettlementAmount)
                         .priceType(priceType)
                         .totalSaleAmount(totalSaleAmount)
                         .totalSaleReturnAmount(totalSaleReturnAmount)
@@ -786,7 +786,7 @@ public class ExcelImportService {
                     existing.setOrderStatus(payment.getOrderStatus());
                     existing.setSku(payment.getSku());
                     existing.setTransactionId(payment.getTransactionId());
-                    existing.setFinalSettlementAmount(payment.getFinalSettlementAmount());
+                    existing.setAmount(payment.getAmount());
                     existing.setPriceType(payment.getPriceType());
                     existing.setTotalSaleAmount(payment.getTotalSaleAmount());
                     existing.setTotalSaleReturnAmount(payment.getTotalSaleReturnAmount());
