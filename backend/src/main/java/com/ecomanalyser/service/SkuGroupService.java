@@ -330,7 +330,7 @@ public class SkuGroupService {
      * Get all SKU mappings
      */
     public List<SkuGroupMappingEntity> getSkuMappings() {
-        return skuGroupMappingRepository.findAll();
+        return skuGroupMappingRepository.findAllWithGroupDetails();
     }
 
     /**
