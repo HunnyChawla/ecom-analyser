@@ -1,6 +1,7 @@
-import { BrowserRouter, Routes, Route, Link, NavLink } from 'react-router-dom'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
 import { ProtectedRoute } from './components/ProtectedRoute'
+import Header from './components/Header'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import UploadData from './pages/UploadData'
