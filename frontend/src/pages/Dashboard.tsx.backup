@@ -102,6 +102,72 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Quick Access Cards */}
+      <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 text-white">
+          <h3 className="text-lg font-semibold mb-2">SKU Group Management</h3>
+          <p className="text-blue-100 mb-4">Organize SKUs into logical groups for better analytics</p>
+          <a 
+            href="/sku-groups" 
+            className="inline-flex items-center px-4 py-2 bg-white text-blue-600 rounded-md font-medium hover:bg-blue-50 transition-colors"
+          >
+            Manage Groups →
+          </a>
+        </div>
+        
+        <div className="bg-gradient-to-r from-green-500 to-green-600 rounded-lg shadow-lg p-6 text-white">
+          <h3 className="text-lg font-semibold mb-2">Upload Data</h3>
+          <p className="text-green-100 mb-4">Upload orders, payments, and SKU pricing data</p>
+          <a 
+            href="/upload" 
+            className="inline-flex items-center px-4 py-2 bg-white text-green-600 rounded-md font-medium hover:bg-green-50 transition-colors"
+          >
+            Upload Data →
+          </a>
+        </div>
+        
+        <div className="bg-gradient-to-r from-purple-500 to-purple-600 rounded-lg shadow-lg p-6 text-white">
+          <h3 className="text-lg font-semibold mb-2">Analytics Dashboard</h3>
+          <p className="text-purple-100 mb-4">View comprehensive business insights and trends</p>
+          <span className="inline-flex items-center px-4 py-2 bg-white text-purple-600 rounded-md font-medium">
+            Current Page
+          </span>
+        </div>
+        
+                      <div className="bg-gradient-to-r from-red-500 to-red-600 rounded-lg shadow-lg p-6 text-white">
+                <h3 className="text-lg font-semibold mb-2">Loss Analysis</h3>
+                <p className="text-red-100 mb-4">Identify orders that resulted in losses despite successful delivery</p>
+                <a 
+                  href="/loss-analysis" 
+                  className="inline-flex items-center px-4 py-2 bg-white text-red-600 rounded-md font-medium hover:bg-red-50 transition-colors"
+                >
+                  View Loss Analysis →
+                </a>
+              </div>
+              
+              <div className="bg-gradient-to-r from-purple-500 to-purple-600 rounded-lg shadow-lg p-6 text-white">
+                <h3 className="text-lg font-semibold mb-2">Return Analysis</h3>
+                <p className="text-purple-100 mb-4">Analyze returns and orders with negative settlement amounts</p>
+                <a 
+                  href="/return-analysis" 
+                  className="inline-flex items-center px-4 py-2 bg-white text-purple-600 rounded-md font-medium hover:bg-purple-50 transition-colors"
+                >
+                  View Return Analysis →
+                </a>
+              </div>
+              
+              <div className="bg-gradient-to-r from-indigo-500 to-indigo-600 rounded-lg shadow-lg p-6 text-white">
+                <h3 className="text-lg font-semibold mb-2">Return Tracking</h3>
+                <p className="text-indigo-100 mb-4">Track return orders and manage receipt status</p>
+                <a 
+                  href="/return-tracking" 
+                  className="inline-flex items-center px-4 py-2 bg-white text-indigo-600 rounded-md font-medium hover:bg-indigo-50 transition-colors"
+                >
+                  View Return Tracking →
+                </a>
+              </div>
+      </div>
+
       {/* Month/Year selector and KPI cards */}
       <div className="bg-white rounded-xl shadow-lg p-6 mb-8 border border-gray-100">
         <div className="flex items-center justify-between mb-4">
