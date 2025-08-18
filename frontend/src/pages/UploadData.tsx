@@ -1,7 +1,5 @@
 import { useState } from 'react'
-import axios from 'axios'
-
-const api = axios.create({ baseURL: 'http://localhost:8080' })
+import { api } from '../utils/api'
 
 // Types for the upload response
 interface UploadResponse {

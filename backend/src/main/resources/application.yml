@@ -34,3 +34,8 @@ kafka:
   enabled: true
   bootstrap-servers: localhost:9092
 
+# JWT Configuration
+jwt:
+  secret: ecomanalyser-super-secret-jwt-key-2024-very-long-and-secure
+  expiration: 86400000  # 24 hours in milliseconds
+

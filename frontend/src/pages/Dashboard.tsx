@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import axios from 'axios'
+import { api } from '../utils/api'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts'
 import SkuGroupCharts from '../components/SkuGroupCharts'
 
@@ -7,7 +7,7 @@ type Aggregation = 'DAY' | 'MONTH' | 'YEAR' | 'QUARTER'
 
 type TimePoint = { period: string, value: number }
 
-const api = axios.create({ baseURL: 'http://localhost:8080' })
+
 
 // Helper function to get proper month boundaries
 function getMonthBoundaries(year: number, month: number): { start: Date, end: Date } {

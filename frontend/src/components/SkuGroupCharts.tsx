@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-
-const api = axios.create({ baseURL: 'http://localhost:8080' });
+import { api } from '../utils/api';
 
 interface GroupAnalytics {
   groupName: string;
