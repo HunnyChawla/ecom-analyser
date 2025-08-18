@@ -165,6 +165,16 @@ const EnhancedSkuGroupManagement: React.FC = () => {
       setLoading(true);
       console.log('Adding SKU to group:', { selectedSku, selectedSkuGroup });
       
+      // Debug: Check what api instance we're using
+      console.log('API instance:', api);
+      console.log('API baseURL:', api.defaults.baseURL);
+      console.log('API interceptors:', api.interceptors);
+      
+      // Debug: Check token before request
+      const token = localStorage.getItem('token');
+      console.log('Token from localStorage:', token ? 'Present' : 'Missing');
+      console.log('Token value:', token);
+      
       const response = await api.post('/api/sku-groups/mappings', {
         skuId: selectedSku,
         groupId: selectedSkuGroup
@@ -180,6 +190,7 @@ const EnhancedSkuGroupManagement: React.FC = () => {
       console.error('Error adding SKU to group:', error);
       console.error('Error response:', error.response?.data);
       console.error('Error status:', error.response?.status);
+      console.error('Error config:', error.config);
       
       // Check if it's an authentication error
       if (error.response?.status === 401 || error.response?.status === 403) {
@@ -200,15 +211,35 @@ const EnhancedSkuGroupManagement: React.FC = () => {
     
     try {
       setLoading(true);
-      await api.put(`/api/sku-groups/mappings/${selectedSku}`, {
+      console.log('Updating SKU group:', { selectedSku, selectedSkuGroup });
+      
+      // Debug: Check token before request
+      const token = localStorage.getItem('token');
+      console.log('Token from localStorage:', token ? 'Present' : 'Missing');
+      
+      const response = await api.put(`/api/sku-groups/mappings/${selectedSku}`, {
         groupId: selectedSkuGroup
       });
+      
+      console.log('Update success response:', response.data);
       setSelectedSku('');
       setSelectedSkuGroup(0);
       setShowUpdateSkuModal(false);
-      fetchSkuMappings();
-    } catch (error) {
+      await fetchSkuMappings();
+    } catch (error: any) {
       console.error('Error updating SKU group:', error);
+      console.error('Error response:', error.response?.data);
+      console.error('Error status:', error.response?.status);
+      console.error('Error config:', error.config);
+      
+      // Check if it's an authentication error
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        console.error('Authentication/Authorization error detected in update');
+        return;
+      }
+      
+      // For other errors, show user feedback
+      alert(`Failed to update SKU group: ${error.response?.data?.error || error.message}`);
     } finally {
       setLoading(false);
     }
