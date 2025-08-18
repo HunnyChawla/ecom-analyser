@@ -15,6 +15,8 @@ public interface PaymentRepository extends JpaRepository<PaymentEntity, Long> {
     Optional<PaymentEntity> findByPaymentId(String paymentId);
     
     Optional<PaymentEntity> findByOrderId(String orderId);
+    
+    List<PaymentEntity> findAllByOrderId(String orderId);
 
     // Fixed query: Use order date instead of payment date, and add month information
     @Query("select p.orderStatus, count(distinct p.orderId) as orderCount, " +
