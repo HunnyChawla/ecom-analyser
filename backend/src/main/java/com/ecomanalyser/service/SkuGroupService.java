@@ -337,7 +337,7 @@ public class SkuGroupService {
      * Add SKU to group
      */
     @Transactional
-    public SkuGroupMappingEntity addSkuToGroup(String skuId, Long groupId) {
+    public Map<String, Object> addSkuToGroup(String skuId, Long groupId) {
         SkuGroupEntity group = skuGroupRepository.findById(groupId)
                 .orElseThrow(() -> new RuntimeException("SKU group not found with id: " + groupId));
         
@@ -352,14 +352,23 @@ public class SkuGroupService {
                 .skuGroup(group)
                 .build();
         
-        return skuGroupMappingRepository.save(mapping);
+        SkuGroupMappingEntity savedMapping = skuGroupMappingRepository.save(mapping);
+        
+        // Return a DTO to avoid lazy loading issues
+        Map<String, Object> result = new HashMap<>();
+        result.put("id", savedMapping.getId());
+        result.put("skuId", savedMapping.getSku());
+        result.put("groupId", savedMapping.getSkuGroup().getId());
+        result.put("groupName", savedMapping.getSkuGroup().getGroupName());
+        
+        return result;
     }
 
     /**
      * Update SKU group assignment
      */
     @Transactional
-    public SkuGroupMappingEntity updateSkuGroupAssignment(String skuId, Long groupId) {
+    public Map<String, Object> updateSkuGroupAssignment(String skuId, Long groupId) {
         SkuGroupEntity group = skuGroupRepository.findById(groupId)
                 .orElseThrow(() -> new RuntimeException("SKU group not found with id: " + groupId));
         
@@ -370,7 +379,16 @@ public class SkuGroupService {
         // Update the group
         existingMapping.setSkuGroup(group);
         
-        return skuGroupMappingRepository.save(existingMapping);
+        SkuGroupMappingEntity savedMapping = skuGroupMappingRepository.save(existingMapping);
+        
+        // Return a DTO to avoid lazy loading issues
+        Map<String, Object> result = new HashMap<>();
+        result.put("id", savedMapping.getId());
+        result.put("skuId", savedMapping.getSku());
+        result.put("groupId", savedMapping.getSkuGroup().getId());
+        result.put("groupName", savedMapping.getSkuGroup().getGroupName());
+        
+        return result;
     }
     
     // Helper methods
