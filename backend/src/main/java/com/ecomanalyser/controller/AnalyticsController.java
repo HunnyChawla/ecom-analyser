@@ -101,6 +101,23 @@ public class AnalyticsController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
+    
+    /**
+     * Get loss orders for a specific date range
+     * Returns orders that resulted in losses despite being delivered and paid
+     */
+    @GetMapping("/loss-orders")
+    public ResponseEntity<Map<String, Object>> getLossOrders(
+            @RequestParam("start") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,
+            @RequestParam("end") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate end) {
+        try {
+            var result = analyticsService.getLossOrders(start, end);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("Error getting loss orders: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
 
     @GetMapping("/profit-trend")
     public ChartResponse<TimeSeriesPoint> profitTrend(

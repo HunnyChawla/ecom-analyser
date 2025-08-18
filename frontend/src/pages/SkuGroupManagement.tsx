@@ -5,12 +5,13 @@ import {
   Download, 
   BarChart3, 
   PieChart, 
-  TrendingUp, 
   Package,
   AlertCircle,
   CheckCircle,
   XCircle
 } from 'lucide-react';
+
+const api = axios.create({ baseURL: 'http://localhost:8080' });
 
 interface SkuGroup {
   id: number;
@@ -54,16 +55,17 @@ const SkuGroupManagement: React.FC = () => {
 
   const fetchGroups = async () => {
     try {
-      const response = await axios.get('/api/sku-groups');
+      const response = await api.get('/api/sku-groups');
       setGroups(response.data);
     } catch (error) {
       console.error('Error fetching groups:', error);
+      setGroups([]);
     }
   };
 
   const fetchUngroupedSkus = async () => {
     try {
-      const response = await axios.get('/api/sku-groups/ungrouped');
+      const response = await api.get('/api/sku-groups/ungrouped');
       setUngroupedSkus(Array.isArray(response.data?.ungroupedSkus) ? response.data.ungroupedSkus : []);
     } catch (error) {
       console.error('Error fetching ungrouped SKUs:', error);
@@ -74,16 +76,13 @@ const SkuGroupManagement: React.FC = () => {
   const fetchAnalytics = async () => {
     try {
       const [topPerforming, revenue] = await Promise.all([
-        axios.get(`/api/sku-groups/analytics/top-performing?start=${dateRange.start}&end=${dateRange.end}`),
-        axios.get(`/api/sku-groups/analytics/revenue-contribution?start=${dateRange.start}&end=${dateRange.end}`)
+        api.get(`/api/sku-groups/analytics/top-performing?start=${dateRange.start}&end=${dateRange.end}`),
+        api.get(`/api/sku-groups/analytics/revenue-contribution?start=${dateRange.start}&end=${dateRange.end}`)
       ]);
-      
-      // Ensure we always set arrays, even if the response is unexpected
       setTopPerformingGroups(Array.isArray(topPerforming.data) ? topPerforming.data : []);
       setRevenueContribution(Array.isArray(revenue.data) ? revenue.data : []);
     } catch (error) {
       console.error('Error fetching analytics:', error);
-      // Set empty arrays on error to prevent filter issues
       setTopPerformingGroups([]);
       setRevenueContribution([]);
     }
@@ -101,7 +100,7 @@ const SkuGroupManagement: React.FC = () => {
     formData.append('file', file);
 
     try {
-      const response = await axios.post('/api/sku-groups/upload', formData, {
+      const response = await api.post('/api/sku-groups/upload', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -109,8 +108,6 @@ const SkuGroupManagement: React.FC = () => {
 
       setUploadStatus('success');
       setUploadMessage(`Successfully imported ${response.data.importedGroups} groups!`);
-      
-      // Refresh data
       setTimeout(() => {
         fetchGroups();
         fetchUngroupedSkus();
@@ -126,10 +123,9 @@ const SkuGroupManagement: React.FC = () => {
 
   const downloadTemplate = async () => {
     try {
-      const response = await axios.get('/api/sku-groups/template', {
+      const response = await api.get('/api/sku-groups/template', {
         responseType: 'blob',
       });
-      
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
@@ -218,7 +214,7 @@ const SkuGroupManagement: React.FC = () => {
                 />
                 <label
                   htmlFor="file-upload"
-                  className={`cursor-pointer inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
+                  className={`cursor-pointer inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                     loading ? 'opacity-50 cursor-not-allowed' : ''
                   }`}
                 >
@@ -308,7 +304,7 @@ const SkuGroupManagement: React.FC = () => {
             </div>
 
             {/* Analytics Charts */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
               {/* Top Performing Groups */}
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
@@ -326,8 +322,8 @@ const SkuGroupManagement: React.FC = () => {
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="font-semibold text-gray-900">₹{group.totalRevenue.toLocaleString()}</p>
-                        <p className="text-sm text-green-600">₹{group.totalProfit.toLocaleString()}</p>
+                        <p className="font-semibold text-gray-900">₹{Number(group.totalRevenue || 0).toLocaleString()}</p>
+                        <p className="text-sm text-green-600">₹{Number(group.totalProfit || 0).toLocaleString()}</p>
                       </div>
                     </div>
                   ))}
@@ -347,55 +343,55 @@ const SkuGroupManagement: React.FC = () => {
                         <span className="text-sm font-medium text-gray-500 w-6">#{index + 1}</span>
                         <p className="font-medium text-gray-900">{group.groupName}</p>
                       </div>
-                      <p className="font-semibold text-green-600">₹{group.revenue.toLocaleString()}</p>
+                      <p className="font-semibold text-green-600">₹{Number(group.revenue || 0).toLocaleString()}</p>
                     </div>
                   ))}
                 </div>
               </div>
-            </div>
 
-            {/* SKU Groups Table */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-8">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">SKU Groups</h3>
-              {!Array.isArray(groups) || groups.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
-                  <Package className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                  <p>No SKU groups created yet. Upload a template to get started.</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Group Name</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Purchase Price</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {groups.map((group) => (
-                        <tr key={group.id}>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm font-medium text-gray-900">{group.groupName}</div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-900">₹{group.purchasePrice}</div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-500">{group.description}</div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-500">
-                              {new Date(group.createdAt).toLocaleDateString()}
-                            </div>
-                          </td>
+              {/* SKU Groups Table */}
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-8 col-span-3 lg:col-span-3">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">SKU Groups</h3>
+                {!Array.isArray(groups) || groups.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <Package className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                    <p>No SKU groups created yet. Upload a template to get started.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Group Name</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Purchase Price</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {groups.map((group) => (
+                          <tr key={group.id}>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm font-medium text-gray-900">{group.groupName}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-900">₹{Number(group.purchasePrice || 0).toLocaleString()}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-500">{group.description}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-500">
+                                {new Date(group.createdAt).toLocaleDateString()}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Ungrouped SKUs */}

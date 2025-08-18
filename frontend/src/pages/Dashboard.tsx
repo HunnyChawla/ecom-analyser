@@ -9,6 +9,20 @@ type TimePoint = { period: string, value: number }
 
 const api = axios.create({ baseURL: 'http://localhost:8080' })
 
+// Helper function to get proper month boundaries
+function getMonthBoundaries(year: number, month: number): { start: Date, end: Date } {
+  // month is 1-12, but JavaScript Date constructor expects 0-11
+  const start = new Date(year, month - 1, 1)
+  const end = new Date(year, month, 0)  // day 0 of next month = last day of current month
+  
+  // Validate that we got the correct dates
+  console.log(`getMonthBoundaries(${year}, ${month}):`)
+  console.log(`  Start: ${start.toDateString()} (should be day 1 of month ${month})`)
+  console.log(`  End: ${end.toDateString()} (should be last day of month ${month})`)
+  
+  return { start, end }
+}
+
 function useTimeSeries(endpoint: string, agg: Aggregation, start: string, end: string) {
   const [data, setData] = useState<TimePoint[]>([])
   useEffect(() => {
@@ -21,10 +35,24 @@ function useTimeSeries(endpoint: string, agg: Aggregation, start: string, end: s
 
 export default function Dashboard() {
   const [agg, setAgg] = useState<Aggregation>('DAY')
-  const end = new Date()
-  const start = new Date(end.getTime() - 30*24*3600*1000)
-  const startStr = start.toISOString().slice(0,10)
-  const endStr = end.toISOString().slice(0,10)
+  const now = new Date()
+  const [year, setYear] = useState<number>(now.getFullYear())
+  const [month, setMonth] = useState<number>(now.getMonth() + 1) // 1-12
+  // Use helper function to get proper month boundaries
+  // Expected behavior: July 2025 should give dates 2025-07-01 to 2025-07-31
+  const { start, end } = getMonthBoundaries(year, month)
+  
+  // Debug logging to verify date ranges
+  console.log(`Selected month: ${month}, year: ${year}`)
+  console.log(`Start date: ${start.toDateString()}`)
+  console.log(`End date: ${end.toDateString()}`)
+  
+  // Use local date formatting to avoid timezone issues
+  const startStr = start.toLocaleDateString('en-CA')  // Returns YYYY-MM-DD format
+  const endStr = end.toLocaleDateString('en-CA')      // Returns YYYY-MM-DD format
+  
+  console.log(`Final date range: ${startStr} to ${endStr}`)
+  console.log(`Expected for month ${month}: ${year}-${month.toString().padStart(2, '0')}-01 to ${year}-${month.toString().padStart(2, '0')}-${new Date(year, month, 0).getDate()}`)
 
   const orders = useTimeSeries('orders-by-time', agg, startStr, endStr)
   const payments = useTimeSeries('payments-by-time', agg, startStr, endStr)
@@ -34,6 +62,7 @@ export default function Dashboard() {
   const [topOrdered, setTopOrdered] = useState<any[]>([])
   const [topProfit, setTopProfit] = useState<any[]>([])
   const [ordersByStatus, setOrdersByStatus] = useState<any[]>([])
+  const [summary, setSummary] = useState<any | null>(null)
 
   useEffect(() => {
     api.get('/api/analytics/top-ordered', { params: { start: startStr, end: endStr, limit: 10 }})
@@ -45,7 +74,10 @@ export default function Dashboard() {
     api.get('/api/analytics/orders-by-status', { params: { start: startStr, end: endStr }})
       .then(r => setOrdersByStatus(r.data))
       .catch(() => setOrdersByStatus([]))
-  }, [startStr, endStr])
+    api.get('/api/analytics/monthly-summary', { params: { year, month }})
+      .then(r => setSummary(r.data))
+      .catch(() => setSummary(null))
+  }, [startStr, endStr, year, month])
 
   return (
     <div className="space-y-6">
@@ -60,7 +92,7 @@ export default function Dashboard() {
       </div>
 
       {/* Quick Access Cards */}
-      <div className="grid md:grid-cols-3 gap-6 mb-8">
+      <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 text-white">
           <h3 className="text-lg font-semibold mb-2">SKU Group Management</h3>
           <p className="text-blue-100 mb-4">Organize SKUs into logical groups for better analytics</p>
@@ -90,6 +122,41 @@ export default function Dashboard() {
             Current Page
           </span>
         </div>
+        
+        <div className="bg-gradient-to-r from-red-500 to-red-600 rounded-lg shadow-lg p-6 text-white">
+          <h3 className="text-lg font-semibold mb-2">Loss Analysis</h3>
+          <p className="text-red-100 mb-4">Identify orders that resulted in losses despite successful delivery</p>
+          <a 
+            href="/loss-analysis" 
+            className="inline-flex items-center px-4 py-2 bg-white text-red-600 rounded-md font-medium hover:bg-red-50 transition-colors"
+          >
+            View Loss Analysis →
+          </a>
+        </div>
+      </div>
+
+      {/* Month/Year selector and KPI cards */}
+      <div className="flex items-center gap-4 mb-4">
+        <label className="text-sm">Month:</label>
+        <select value={month} onChange={e => setMonth(Number(e.target.value))} className="border rounded px-2 py-1">
+          {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+            <option key={m} value={m}>{m.toString().padStart(2,'0')}</option>
+          ))}
+        </select>
+        <label className="text-sm">Year:</label>
+        <select value={year} onChange={e => setYear(Number(e.target.value))} className="border rounded px-2 py-1">
+          {Array.from({ length: 6 }, (_, i) => now.getFullYear() - i).map(y => (
+            <option key={y} value={y}>{y}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className="grid md:grid-cols-5 gap-4 mb-8">
+        <Kpi title="Total Revenue" value={`₹${Number(summary?.totalRevenue || 0).toLocaleString()}`}/>
+        <Kpi title="Total Profit" value={`₹${Number(summary?.totalProfit || 0).toLocaleString()}`}/>
+        <Kpi title="Total Orders" value={`${Number(summary?.totalOrders || 0).toLocaleString()}`}/>
+        <Kpi title="Total Loss" value={`₹${Number(summary?.totalLoss || 0).toLocaleString()}`}/>
+        <Kpi title="Net Income" value={`₹${Number(summary?.netIncome || 0).toLocaleString()}`}/>
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">
@@ -132,6 +199,15 @@ function ChartCard({ title, children }: { title: string, children: any }) {
       <div className="h-64">
         {children}
       </div>
+    </div>
+  )
+}
+
+function Kpi({ title, value }: { title: string, value: string }) {
+  return (
+    <div className="bg-white rounded shadow p-4">
+      <div className="text-sm text-gray-500">{title}</div>
+      <div className="text-2xl font-semibold mt-1">{value}</div>
     </div>
   )
 }

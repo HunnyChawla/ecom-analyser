@@ -3,6 +3,7 @@ import Dashboard from './pages/Dashboard'
 import UploadData from './pages/UploadData'
 import SkuGroupManagement from './pages/SkuGroupManagement'
 import DataMerge from './pages/DataMerge'
+import LossAnalysis from './pages/LossAnalysis'
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
               <NavLink to="/upload" className={({isActive}) => isActive ? 'font-semibold' : ''}>Upload</NavLink>
               <NavLink to="/sku-groups" className={({isActive}) => isActive ? 'font-semibold' : ''}>SKU Groups</NavLink>
               <NavLink to="/data-merge" className={({isActive}) => isActive ? 'font-semibold' : ''}>Data Merge</NavLink>
+              <NavLink to="/loss-analysis" className={({isActive}) => isActive ? 'font-semibold' : ''}>Loss Analysis</NavLink>
             </nav>
           </div>
         </header>
@@ -25,6 +27,7 @@ function App() {
             <Route path="/upload" element={<UploadData/>} />
             <Route path="/sku-groups" element={<SkuGroupManagement/>} />
             <Route path="/data-merge" element={<DataMerge/>} />
+            <Route path="/loss-analysis" element={<LossAnalysis/>} />
           </Routes>
         </main>
       </div>

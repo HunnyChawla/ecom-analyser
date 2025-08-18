@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
+const api = axios.create({ baseURL: 'http://localhost:8080' });
+
 interface GroupAnalytics {
   groupName: string;
   orderCount: number;
@@ -43,18 +45,15 @@ const SkuGroupCharts: React.FC = () => {
     try {
       setLoading(true);
       const [topPerforming, revenue, profit] = await Promise.all([
-        axios.get(`/api/sku-groups/analytics/top-performing?start=${dateRange.start}&end=${dateRange.end}`),
-        axios.get(`/api/sku-groups/analytics/revenue-contribution?start=${dateRange.start}&end=${dateRange.end}`),
-        axios.get(`/api/sku-groups/analytics/profit-comparison?start=${dateRange.start}&end=${dateRange.end}`)
+        api.get(`/api/sku-groups/analytics/top-performing?start=${dateRange.start}&end=${dateRange.end}`),
+        api.get(`/api/sku-groups/analytics/revenue-contribution?start=${dateRange.start}&end=${dateRange.end}`),
+        api.get(`/api/sku-groups/analytics/profit-comparison?start=${dateRange.start}&end=${dateRange.end}`)
       ]);
-      
-      // Ensure we always set arrays, even if the response is unexpected
       setTopPerformingGroups(Array.isArray(topPerforming.data) ? topPerforming.data : []);
       setRevenueContribution(Array.isArray(revenue.data) ? revenue.data : []);
       setProfitComparison(Array.isArray(profit.data) ? profit.data : []);
     } catch (error) {
       console.error('Error fetching group analytics:', error);
-      // Set empty arrays on error to prevent filter issues
       setTopPerformingGroups([]);
       setRevenueContribution([]);
       setProfitComparison([]);
@@ -79,17 +78,14 @@ const SkuGroupCharts: React.FC = () => {
     );
   }
 
-  // Ensure all state variables are arrays before filtering
   const topPerformingGroupsArray = Array.isArray(topPerformingGroups) ? topPerformingGroups : [];
   const revenueContributionArray = Array.isArray(revenueContribution) ? revenueContribution : [];
   const profitComparisonArray = Array.isArray(profitComparison) ? profitComparison : [];
 
-  // Filter out "Ungrouped SKUs" for better visualization
   const filteredTopPerforming = topPerformingGroupsArray.filter(g => g.groupName !== 'Ungrouped SKUs');
   const filteredRevenue = revenueContributionArray.filter(g => g.groupName !== 'Ungrouped SKUs');
   const filteredProfit = profitComparisonArray.filter(g => g.groupName !== 'Ungrouped SKUs');
 
-  // Don't render if we don't have valid data
   if (!Array.isArray(topPerformingGroups) || !Array.isArray(revenueContribution) || !Array.isArray(profitComparison)) {
     return (
       <div className="flex items-center justify-center h-64 text-gray-500">
@@ -174,7 +170,7 @@ const SkuGroupCharts: React.FC = () => {
                   fill="#8884d8"
                   dataKey="revenue"
                 >
-                  {filteredRevenue.slice(0, 8).map((entry, index) => (
+                  {filteredRevenue.slice(0, 8).map((_, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>

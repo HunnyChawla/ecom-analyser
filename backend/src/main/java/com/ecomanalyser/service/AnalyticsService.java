@@ -348,6 +348,98 @@ public class AnalyticsService {
                 .toList();
         return new ChartResponse<>(points);
     }
+    
+    /**
+     * Get loss orders for a specific date range
+     * Returns orders that resulted in losses despite being delivered and paid
+     */
+    public Map<String, Object> getLossOrders(LocalDate start, LocalDate end) {
+        try {
+            var mergedOrders = mergedOrderRepository.findByOrderDateBetween(start, end);
+            List<Map<String, Object>> lossOrders = new ArrayList<>();
+            
+            BigDecimal totalRevenue = BigDecimal.ZERO;
+            BigDecimal totalCogs = BigDecimal.ZERO;
+            BigDecimal totalLoss = BigDecimal.ZERO;
+            long totalQuantity = 0;
+            
+            for (MergedOrderPaymentEntity merged : mergedOrders) {
+                if (merged.getSettlementAmount() == null || merged.getSettlementAmount().compareTo(BigDecimal.ZERO) <= 0 ||
+                    merged.getSkuId() == null || merged.getQuantity() == null ||
+                    !"DELIVERED".equals(merged.getOrderStatus())) {
+                    continue; // Skip invalid or non-delivered orders
+                }
+                
+                try {
+                    // Get purchase price for this SKU
+                    BigDecimal purchasePrice = getPurchasePriceForSku(merged.getSkuId());
+                    
+                    if (purchasePrice.compareTo(BigDecimal.ZERO) > 0) {
+                        // Calculate COGS: Purchase Price × Quantity
+                        BigDecimal cogs = purchasePrice.multiply(BigDecimal.valueOf(merged.getQuantity()));
+                        
+                        // Calculate profit/loss: Revenue - COGS
+                        BigDecimal netProfit = merged.getSettlementAmount().subtract(cogs);
+                        
+                        // Only include orders that resulted in losses
+                        if (netProfit.signum() < 0) {
+                            Map<String, Object> orderData = new LinkedHashMap<>();
+                            orderData.put("orderId", merged.getOrderId());
+                            orderData.put("skuId", merged.getSkuId());
+                            orderData.put("quantity", merged.getQuantity());
+                            orderData.put("settlementAmount", merged.getSettlementAmount());
+                            orderData.put("purchasePrice", purchasePrice);
+                            orderData.put("cogs", cogs);
+                            orderData.put("lossAmount", netProfit.abs());
+                            orderData.put("orderStatus", merged.getOrderStatus());
+                            orderData.put("orderDate", merged.getOrderDate());
+                            
+                            lossOrders.add(orderData);
+                            
+                            // Update totals
+                            totalRevenue = totalRevenue.add(merged.getSettlementAmount());
+                            totalCogs = totalCogs.add(cogs);
+                            totalLoss = totalLoss.add(netProfit.abs());
+                            totalQuantity += merged.getQuantity();
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("Error calculating loss for SKU {}: {}", merged.getSkuId(), e.getMessage());
+                }
+            }
+            
+            // Sort by loss amount (highest first)
+            lossOrders.sort((a, b) -> {
+                BigDecimal lossA = (BigDecimal) a.get("lossAmount");
+                BigDecimal lossB = (BigDecimal) b.get("lossAmount");
+                return lossB.compareTo(lossA);
+            });
+            
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("orders", lossOrders);
+            result.put("summary", Map.of(
+                "totalOrders", lossOrders.size(),
+                "totalQuantity", totalQuantity,
+                "totalRevenue", totalRevenue,
+                "totalCogs", totalCogs,
+                "totalLoss", totalLoss
+            ));
+            
+            return result;
+        } catch (Exception e) {
+            log.error("Error getting loss orders: {}", e.getMessage(), e);
+            return Map.of(
+                "orders", new ArrayList<>(),
+                "summary", Map.of(
+                    "totalOrders", 0,
+                    "totalQuantity", 0L,
+                    "totalRevenue", BigDecimal.ZERO,
+                    "totalCogs", BigDecimal.ZERO,
+                    "totalLoss", BigDecimal.ZERO
+                )
+            );
+        }
+    }
 
     public LocalDate aggregateDate(LocalDate date, Aggregation agg) {
         return switch (agg) {
