@@ -8,7 +8,12 @@ import java.time.LocalDateTime;
 import java.time.LocalDate;
 
 @Entity
-@Table(name = "payments")
+@Table(
+    name = "payments",
+    uniqueConstraints = {
+        @UniqueConstraint(name = "uk_payments_order_transaction", columnNames = {"order_id", "transaction_id"})
+    }
+)
 @Getter
 @Setter
 @NoArgsConstructor

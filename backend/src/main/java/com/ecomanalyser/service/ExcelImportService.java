@@ -168,12 +168,10 @@ public class ExcelImportService {
             int savedCount = 0;
             for (OrderEntity order : toSave) {
                 try {
-                    // Check if order already exists
                     var existingOrder = orderRepository.findByOrderId(order.getOrderId());
                     if (existingOrder.isPresent()) {
                         log.info("Order {} already exists, updating...", order.getOrderId());
                         var existing = existingOrder.get();
-                        // Update all fields
                         existing.setSku(order.getSku());
                         existing.setQuantity(order.getQuantity());
                         existing.setSellingPrice(order.getSellingPrice());
@@ -188,7 +186,6 @@ public class ExcelImportService {
                         orderRepository.save(existing);
                         savedCount++;
                     } else {
-                        // New order, save it
                         orderRepository.save(order);
                         savedCount++;
                     }
@@ -211,11 +208,9 @@ public class ExcelImportService {
             return importPaymentsCsv(file);
         } else {
             log.info("Detected Excel file, using Excel parser");
-            // Reset warnings for this run
             importWarnings.get().clear();
             List<PaymentEntity> toSave = new ArrayList<>();
             try (InputStream is = file.getInputStream(); Workbook wb = new XSSFWorkbook(is)) {
-                // Look for the "Order Payments" sheet specifically
                 Sheet sheet = null;
                 for (int i = 0; i < wb.getNumberOfSheets(); i++) {
                     String sheetName = wb.getSheetName(i);
@@ -226,100 +221,65 @@ public class ExcelImportService {
                         break;
                     }
                 }
-                
                 if (sheet == null) {
                     log.warn("'Order Payments' sheet not found, falling back to first sheet");
                     sheet = wb.getSheetAt(0);
                 }
-                
                 log.info("Excel sheet: {}, total rows: {}", sheet.getSheetName(), sheet.getPhysicalNumberOfRows());
                 if (sheet.getPhysicalNumberOfRows() == 0) return 0;
 
-                // Use a single header row approach - try row 1 (2nd row) as per your sheet description
                 Row header = sheet.getRow(1);
                 if (header == null) {
                     log.warn("Header row 1 not found, trying first row");
                     header = sheet.getRow(0);
                 }
-                
                 if (header == null) {
                     log.error("No header row found");
                     return 0;
                 }
-                
-                log.info("Using header row at index: {}", header.getRowNum());
                 Map<String,Integer> hmap = buildHeaderIndex(header);
-                log.info("Header index map: {}", hmap);
-                
-                int firstDataRow = header.getRowNum() + 2; // data starts 2 rows after header
-                log.info("First data row: {}", firstDataRow);
-                
-                // Use getPhysicalNumberOfRows() for more reliable row counting
+                int firstDataRow = header.getRowNum() + 2;
                 int totalRows = sheet.getPhysicalNumberOfRows();
-                int lastRowIndex = totalRows - 1; // Convert to 0-based index
-                log.info("Total physical rows: {}, Last row index: {}, Will process rows {} to {}", 
-                        totalRows, lastRowIndex, firstDataRow, lastRowIndex);
-                
+                int lastRowIndex = totalRows - 1;
+
                 int processedRows = 0;
                 int skippedRows = 0;
                 int validRows = 0;
-                
+
                 for (int r = firstDataRow; r <= lastRowIndex; r++) {
                     processedRows++;
                     Row row = sheet.getRow(r);
-                    if (row == null) {
-                        skippedRows++;
-                        log.debug("Row {}: Skipping null row", r);
-                        continue;
-                    }
-                    
+                    if (row == null) { skippedRows++; continue; }
+
                     String orderId = getCellAny(row, hmap, List.of("Sub Order No", "Order Id", "Order ID", "Sub Order"), null);
                     if (orderId == null || orderId.isBlank()) {
                         orderId = "UNKNOWN-" + System.currentTimeMillis() + "-" + r;
                         warn("Row " + r + ": Missing orderId; generated " + orderId);
                     }
                     orderId = clamp(orderId, "order_id");
-                    
+
                     String paymentId = clamp(getCellAny(row, hmap, List.of("Transaction ID", "Payment Id", "Payment ID", "Transaction"), null), "payment_id");
-                    if (paymentId.isBlank()) {
-                        paymentId = orderId + "-PAY"; // fallback payment ID
-                    }
-                    
+                    if (paymentId == null || paymentId.isBlank()) paymentId = orderId + "-PAY";
+
                     String amtStr = getCellAny(row, hmap, List.of("Final Settlement Amount", "Net Settlement Amount", "Amount"), null);
                     String dateStr = getCellAny(row, hmap, List.of("Payment Date", "Settlement Date", "Date"), null);
-                    
+
                     if ((amtStr == null || amtStr.isBlank()) && (dateStr == null || dateStr.isBlank())) {
                         skippedRows++;
-                        log.debug("Row {}: Skipping row with blank amount and date", r);
-                        continue; // likely an empty row
+                        continue;
                     }
-                    
+
                     BigDecimal amount = parseBigDecimal(amtStr);
                     LocalDate date = parseToLocalDate(dateStr);
-                    if (amount == null) {
-                        amount = BigDecimal.ZERO;
-                        warn("Row " + r + " (" + orderId + "): Amount missing/invalid; set to 0");
-                    }
-                    if (date == null) {
-                        date = LocalDate.now();
-                        warn("Row " + r + " (" + orderId + "): Payment date missing/invalid; set to today");
-                    }
-                    
-                    // Get order status from column F (Live Order Status)
+                    if (amount == null) { amount = BigDecimal.ZERO; warn("Row " + r + " (" + orderId + "): Amount missing/invalid; set to 0"); }
+                    if (date == null) { date = LocalDate.now(); warn("Row " + r + " (" + orderId + "): Payment date missing/invalid; set to today"); }
+
                     String orderStatus = clamp(getCellAny(row, hmap, List.of("Live Order Status", "Order Status", "Status"), null), "order_status");
-                    
-                    // Do not skip for missing order status; default and warn
-                    if (orderStatus == null || orderStatus.isBlank()) {
-                        orderStatus = "UNKNOWN";
-                        warn("Row " + r + " (" + orderId + "): Missing order status; set to UNKNOWN");
-                    }
-                    
-                    validRows++;
-                    log.debug("Row {}: Valid row - orderId={}, paymentId={}, amount={}, date={}, status={}", 
-                             r, orderId, paymentId, amount, date, orderStatus);
-                    
-                    // Get all additional payment fields
+                    if (orderStatus == null || orderStatus.isBlank()) { orderStatus = "UNKNOWN"; warn("Row " + r + " (" + orderId + "): Missing order status; set to UNKNOWN"); }
+
                     String transactionId = clamp(getCellAny(row, hmap, List.of("Transaction ID", "Transaction Id"), null), "transaction_id");
+                    if (transactionId == null || transactionId.isBlank()) { transactionId = paymentId; warn("Row " + r + " (" + orderId + "): Missing transaction id; using payment id as fallback"); }
+
                     BigDecimal finalSettlementAmount = parseBigDecimal(getCellAny(row, hmap, List.of("Final Settlement Amount", "Net Settlement Amount"), null));
                     String priceType = clamp(getCellAny(row, hmap, List.of("Price Type"), null), "price_type");
                     BigDecimal totalSaleAmount = parseBigDecimal(getCellAny(row, hmap, List.of("Total Sale Amount (Incl. Shipping & GST)"), null));
@@ -350,8 +310,7 @@ public class ExcelImportService {
                     LocalDate dispatchDate = parseToLocalDate(getCellAny(row, hmap, List.of("Dispatch Date"), null));
                     BigDecimal productGstPercentage = parseBigDecimal(getCellAny(row, hmap, List.of("Product GST %"), null));
                     BigDecimal listingPriceInclTaxes = parseBigDecimal(getCellAny(row, hmap, List.of("Listing Price (Incl. taxes)"), null));
-                    
-                    // Enrich with order SKU and order date
+
                     String skuForOrder = null;
                     LocalDateTime orderDateTimeVal = null;
                     try {
@@ -361,7 +320,6 @@ public class ExcelImportService {
                             orderDateTimeVal = orderOpt.get().getOrderDateTime();
                         }
                     } catch (Exception ignored) {}
-                    // Fallbacks if order is not present yet: try to read SKU and Order Date from payment file columns
                     if (skuForOrder == null) {
                         String paymentSkuCandidate = clamp(getCellAny(row, hmap, List.of("SKU", "Supplier SKU", "Product SKU", "Supplier SKU Code"), null), "sku");
                         if (paymentSkuCandidate != null && !paymentSkuCandidate.isBlank()) {
@@ -377,8 +335,7 @@ public class ExcelImportService {
                             orderDateTimeVal = dispatchDate.atStartOfDay();
                         }
                     }
-                    
-                    // Build entity: set both amount and finalSettlementAmount
+
                     PaymentEntity entity = PaymentEntity.builder()
                             .paymentId(paymentId)
                             .orderId(orderId)
@@ -422,22 +379,19 @@ public class ExcelImportService {
 
                     toSave.add(entity);
                 }
-                
+
                 log.info("Row processing summary: Total processed={}, Valid rows={}, Skipped rows={}, Entities to save={}", 
                         processedRows, validRows, skippedRows, toSave.size());
                 log.info("Total payment entities to process: {} (processed rows {} to {})", 
                         toSave.size(), firstDataRow, lastRowIndex);
-                
-                // Handle duplicates by using upsert logic based on order_id (Sub Order No)
+
                 int savedCount = 0;
                 for (PaymentEntity payment : toSave) {
                     try {
-                        // Check if payment already exists based on order_id (Sub Order No)
-                        var existingPayment = paymentRepository.findByOrderId(payment.getOrderId());
+                        var existingPayment = paymentRepository.findByOrderIdAndTransactionId(payment.getOrderId(), payment.getTransactionId());
                         if (existingPayment.isPresent()) {
                             log.info("Payment for order {} already exists, updating...", payment.getOrderId());
                             var existing = existingPayment.get();
-                            // Update all fields
                             existing.setPaymentId(payment.getPaymentId());
                             existing.setAmount(payment.getAmount());
                             existing.setFinalSettlementAmount(payment.getFinalSettlementAmount());
@@ -478,7 +432,6 @@ public class ExcelImportService {
                             paymentRepository.save(existing);
                             savedCount++;
                         } else {
-                            // New payment, save it
                             paymentRepository.save(payment);
                             savedCount++;
                         }
@@ -487,7 +440,7 @@ public class ExcelImportService {
                         throw e;
                     }
                 }
-                
+
                 log.info("Successfully processed {} payment entities", savedCount);
                 return savedCount;
             }
@@ -516,7 +469,6 @@ public class ExcelImportService {
                             .build());
                 }
             }
-            // upsert simple: delete all and insert (simple baseline)
             skuPriceRepository.deleteAllInBatch();
             skuPriceRepository.saveAll(toSave);
             return toSave.size();
@@ -551,7 +503,6 @@ public class ExcelImportService {
                 BigDecimal price = new BigDecimal(cleanNumeric(priceStr));
                 LocalDate date = parseToLocalDate(getAny(r, headerMap, List.of("order date", "date", "orderdate"), 4));
                 
-                // Get additional fields
                 String productName = getAny(r, headerMap, List.of("product name", "product"), 5);
                 String customerState = getAny(r, headerMap, List.of("customer state", "state"), 6);
                 String size = getAny(r, headerMap, List.of("size"), 7);
@@ -581,16 +532,13 @@ public class ExcelImportService {
         
         log.info("Total CSV order entities to process: {}", toSave.size());
         
-        // Handle duplicates by using upsert logic
         int savedCount = 0;
         for (OrderEntity order : toSave) {
             try {
-                // Check if order already exists
                 var existingOrder = orderRepository.findByOrderId(order.getOrderId());
                 if (existingOrder.isPresent()) {
                     log.info("CSV Order {} already exists, updating...", order.getOrderId());
                     var existing = existingOrder.get();
-                    // Update all fields
                     existing.setSku(order.getSku());
                     existing.setQuantity(order.getQuantity());
                     existing.setSellingPrice(order.getSellingPrice());
@@ -605,7 +553,6 @@ public class ExcelImportService {
                     orderRepository.save(existing);
                     savedCount++;
                 } else {
-                    // New order, save it
                     orderRepository.save(order);
                     savedCount++;
                 }
@@ -629,50 +576,15 @@ public class ExcelImportService {
                 String orderId = clamp(getAny(r, headerMap, List.of("order id", "orderId", "sub order no", "sub order number"), 1), "order_id");
                 String amtStr = getAny(r, headerMap, List.of("final settlement amount", "net settlement amount", "amount"), 2);
                 BigDecimal amount;
-                try {
-                    amount = new BigDecimal(cleanNumeric(amtStr));
-                } catch (Exception ex) {
-                    amount = BigDecimal.ZERO;
-                    warn("CSV: orderId=" + orderId + ": Amount '" + amtStr + "' invalid; set to 0");
-                }
+                try { amount = new BigDecimal(cleanNumeric(amtStr)); } catch (Exception ex) { amount = BigDecimal.ZERO; warn("CSV: orderId=" + orderId + ": Amount '" + amtStr + "' invalid; set to 0"); }
                 LocalDate date = parseToLocalDate(getAny(r, headerMap, List.of("payment date", "settlement date", "date"), 3));
-                if (date == null) {
-                    date = LocalDate.now();
-                    warn("CSV: orderId=" + orderId + ": Payment date missing/invalid; set to today");
-                }
+                if (date == null) { date = LocalDate.now(); warn("CSV: orderId=" + orderId + ": Payment date missing/invalid; set to today"); }
                 String orderStatus = clamp(getAny(r, headerMap, List.of("live order status", "order status", "status"), 4), "order_status");
-                
-                // Validate that order status is not null or blank
-                if (orderStatus == null || orderStatus.isBlank()) {
-                    orderStatus = "UNKNOWN";
-                    warn("CSV: orderId=" + orderId + ": Missing order status; set to UNKNOWN");
-                }
-                
-                // Enrich with order SKU and order date
-                String skuForOrder = null;
-                LocalDateTime orderDateTimeVal = null;
-                try {
-                    var orderOpt = orderRepository.findByOrderId(orderId);
-                    if (orderOpt.isPresent()) {
-                        skuForOrder = clamp(orderOpt.get().getSku(), "sku");
-                        orderDateTimeVal = orderOpt.get().getOrderDateTime();
-                    }
-                } catch (Exception ignored) {}
-                if (skuForOrder == null) {
-                    String paymentSkuCandidate = clamp(getAny(r, headerMap, List.of("sku", "supplier sku", "product sku", "supplier sku code"), null), "sku");
-                    if (paymentSkuCandidate != null && !paymentSkuCandidate.isBlank()) {
-                        skuForOrder = paymentSkuCandidate;
-                    }
-                }
-                if (orderDateTimeVal == null) {
-                    LocalDate orderDateAlt = parseToLocalDate(getAny(r, headerMap, List.of("order date", "orderdate", "order created date"), null));
-                    if (orderDateAlt != null) {
-                        orderDateTimeVal = orderDateAlt.atStartOfDay();
-                    }
-                }
- 
-                // Additional fields (align with Excel path)
+                if (orderStatus == null || orderStatus.isBlank()) { orderStatus = "UNKNOWN"; warn("CSV: orderId=" + orderId + ": Missing order status; set to UNKNOWN"); }
+
                 String transactionId = clamp(getAny(r, headerMap, List.of("transaction id", "transaction"), null), "transaction_id");
+                if (transactionId == null || transactionId.isBlank()) { transactionId = paymentId; warn("CSV: orderId=" + orderId + ": Missing transaction id; using payment id as fallback"); }
+
                 BigDecimal finalSettlementAmount = null;
                 try { finalSettlementAmount = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("final settlement amount", "net settlement amount"), null))); } catch (Exception ignored) {}
                 String priceType = clamp(getAny(r, headerMap, List.of("price type"), null), "price_type");
@@ -703,6 +615,28 @@ public class ExcelImportService {
                 BigDecimal productGstPercentage = null; try { productGstPercentage = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("product gst %"), null))); } catch (Exception ignored) {}
                 BigDecimal listingPriceInclTaxes = null; try { listingPriceInclTaxes = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("listing price (incl. taxes)"), null))); } catch (Exception ignored) {}
                 
+                String skuForOrder = null;
+                LocalDateTime orderDateTimeVal = null;
+                try {
+                    var orderOpt = orderRepository.findByOrderId(orderId);
+                    if (orderOpt.isPresent()) {
+                        skuForOrder = clamp(orderOpt.get().getSku(), "sku");
+                        orderDateTimeVal = orderOpt.get().getOrderDateTime();
+                    }
+                } catch (Exception ignored) {}
+                if (skuForOrder == null) {
+                    String paymentSkuCandidate = clamp(getAny(r, headerMap, List.of("sku", "supplier sku", "product sku", "supplier sku code"), null), "sku");
+                    if (paymentSkuCandidate != null && !paymentSkuCandidate.isBlank()) {
+                        skuForOrder = paymentSkuCandidate;
+                    }
+                }
+                if (orderDateTimeVal == null) {
+                    LocalDate orderDateAlt = parseToLocalDate(getAny(r, headerMap, List.of("order date", "orderdate", "order created date"), null));
+                    if (orderDateAlt != null) {
+                        orderDateTimeVal = orderDateAlt.atStartOfDay();
+                    }
+                }
+ 
                 toSave.add(PaymentEntity.builder()
                         .paymentId(paymentId)
                         .orderId(orderId)
@@ -746,24 +680,21 @@ public class ExcelImportService {
         
         log.info("Total CSV payment entities to process: {}", toSave.size());
         
-        // Handle duplicates by using upsert logic based on order_id (Sub Order No)
         int savedCount = 0;
         for (PaymentEntity payment : toSave) {
             try {
-                // Check if payment already exists based on order_id (Sub Order No)
-                var existingPayment = paymentRepository.findByOrderId(payment.getOrderId());
+                var existingPayment = paymentRepository.findByOrderIdAndTransactionId(payment.getOrderId(), payment.getTransactionId());
                 if (existingPayment.isPresent()) {
                     log.info("CSV Payment for order {} already exists, updating...", payment.getOrderId());
                     var existing = existingPayment.get();
-                    // Update all fields
                     existing.setPaymentId(payment.getPaymentId());
                     existing.setAmount(payment.getAmount());
+                    existing.setFinalSettlementAmount(payment.getFinalSettlementAmount());
                     existing.setPaymentDateTime(payment.getPaymentDateTime());
                     existing.setOrderDateTime(payment.getOrderDateTime());
                     existing.setOrderStatus(payment.getOrderStatus());
                     existing.setSku(payment.getSku());
                     existing.setTransactionId(payment.getTransactionId());
-                    existing.setAmount(payment.getAmount());
                     existing.setPriceType(payment.getPriceType());
                     existing.setTotalSaleAmount(payment.getTotalSaleAmount());
                     existing.setTotalSaleReturnAmount(payment.getTotalSaleReturnAmount());
@@ -794,7 +725,6 @@ public class ExcelImportService {
                     paymentRepository.save(existing);
                     savedCount++;
                 } else {
-                    // New payment, save it
                     paymentRepository.save(payment);
                     savedCount++;
                 }
@@ -805,26 +735,6 @@ public class ExcelImportService {
         }
         
         return savedCount;
-    }
-
-    private int importSkuPricesCsv(MultipartFile file) throws Exception {
-        List<SkuPriceEntity> toSave = new ArrayList<>();
-        try (Reader reader = new InputStreamReader(file.getInputStream());
-             CSVParser parser = CSVFormat.DEFAULT.withFirstRecordAsHeader().parse(reader)) {
-            var headerMap = parser.getHeaderMap();
-            for (CSVRecord r : parser) {
-                String sku = getAny(r, headerMap, List.of("sku", "purchasePrice"), 0);
-                String purchasePrice = getAny(r, headerMap, List.of("purchasePrice", "purchase price"), 1);
-                toSave.add(SkuPriceEntity.builder()
-                        .sku(sku)
-                        .purchasePrice(new BigDecimal(cleanNumeric(purchasePrice)))
-                        .updatedAt(LocalDateTime.now())
-                        .build());
-            }
-        }
-        skuPriceRepository.deleteAllInBatch();
-        skuPriceRepository.saveAll(toSave);
-        return toSave.size();
     }
 
     private String getAny(CSVRecord r, Map<String, Integer> headerMap, List<String> headerSynonyms, Integer fallbackIndex) {
@@ -858,29 +768,17 @@ public class ExcelImportService {
 
     public BigDecimal parseBigDecimal(String value) {
         if (value == null || value.isBlank()) return null;
-        try {
-            return new BigDecimal(cleanNumeric(value));
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        try { return new BigDecimal(cleanNumeric(value)); } catch (NumberFormatException e) { return null; }
     }
 
     public LocalDate parseToLocalDate(String value) {
         if (value == null || value.isBlank()) return null;
-        try {
-            return LocalDate.parse(value.trim());
-        } catch (Exception e) {
-            return null;
-        }
+        try { return LocalDate.parse(value.trim()); } catch (Exception e) { return null; }
     }
 
     public int parseIntFlexible(String value) {
         if (value == null || value.isBlank()) return 0;
-        try {
-            return (int) Double.parseDouble(cleanNumeric(value));
-        } catch (NumberFormatException e) {
-            return 0;
-        }
+        try { return (int) Double.parseDouble(cleanNumeric(value)); } catch (NumberFormatException e) { return 0; }
     }
 
     public String cleanNumeric(String value) {
@@ -897,7 +795,6 @@ public class ExcelImportService {
             String joined = new StringBuilder()
                     .append(getCellAsString(row, row.getFirstCellNum() >= 0 ? row.getFirstCellNum() : 0))
                     .toString();
-            // Basic scan across row
             boolean found = false;
             for (int c = row.getFirstCellNum(); c < row.getLastCellNum(); c++) {
                 String cell = getCellAsString(row, c);
@@ -905,7 +802,6 @@ public class ExcelImportService {
             }
             String norm = normalizeHeader(joined);
             log.debug("Row {}: normalized content: '{}'", r, norm);
-            // A row is header-like if it contains at least one token from EACH token group
             found = true;
             for (List<String> group : tokenGroups) {
                 boolean anyInGroup = false;
@@ -940,16 +836,12 @@ public class ExcelImportService {
     private Map<String,Integer> buildHeaderIndex(Row header) {
         Map<String,Integer> map = new java.util.HashMap<>();
         log.debug("Building header index for row: {}", header.getRowNum());
-        
-        // More robust column scanning - scan a wider range for complex Excel files
-        int maxCols = 100; // Increased from 50 to handle files with many columns
+        int maxCols = 100;
         for (int i = 0; i < maxCols; i++) {
             var cell = header.getCell(i);
             if (cell == null) continue;
-            
             String cellValue = cell.getStringCellValue();
             if (cellValue == null || cellValue.trim().isEmpty()) continue;
-            
             String name = normalizeHeader(cellValue);
             log.debug("Column {}: '{}' -> '{}'", i, cellValue, name);
             map.put(name, i);
@@ -960,8 +852,6 @@ public class ExcelImportService {
 
     private String getCellAny(Row row, Map<String,Integer> hmap, List<String> names, Integer fallbackIdx) {
         log.debug("getCellAny: looking for names: {}, fallback: {}", names, fallbackIdx);
-        
-        // First try to resolve by header names
         for (String n : names) {
             Integer idx = resolveHeaderIndex(hmap, n);
             log.debug("getCellAny: name '{}' resolved to index: {}", n, idx);
@@ -974,51 +864,39 @@ public class ExcelImportService {
                 }
             }
         }
-        
-        // If header resolution failed, try fallback index
         if (fallbackIdx != null) {
             String v = getCellAsString(row, fallbackIdx);
             log.debug("getCellAny: fallback cell at index {} = '{}'", fallbackIdx, v);
             if (v != null && !v.isBlank()) return v.trim();
         }
-        
-        // Last resort: try common column positions based on typical Excel layouts
         if (names.contains("Sub Order No") || names.contains("Order Id")) {
-            // Try column 1 (B) for order ID
             String v = getCellAsString(row, 1);
             if (v != null && !v.isBlank()) {
                 log.debug("getCellAny: using fallback column 1 for order ID: '{}'", v);
                 return v.trim();
             }
         }
-        
         if (names.contains("Transaction ID") || names.contains("Payment Id")) {
-            // Try column 9 (J) for transaction ID
             String v = getCellAsString(row, 9);
             if (v != null && !v.isBlank()) {
                 log.debug("getCellAny: using fallback column 9 for transaction ID: '{}'", v);
                 return v.trim();
             }
         }
-        
         if (names.contains("Final Settlement Amount") || names.contains("Amount")) {
-            // Try column 12 (L) for amount
             String v = getCellAsString(row, 12);
             if (v != null && !v.isBlank()) {
                 log.debug("getCellAny: using fallback column 12 for amount: '{}'", v);
                 return v.trim();
             }
         }
-        
         if (names.contains("Payment Date") || names.contains("Date")) {
-            // Try column 10 (K) for date
             String v = getCellAsString(row, 10);
             if (v != null && !v.isBlank()) {
                 log.debug("getCellAny: using fallback column 10 for date: '{}'", v);
                 return v.trim();
             }
         }
-        
         log.debug("getCellAny: no value found for names: {}", names);
         return "";
     }
@@ -1028,11 +906,9 @@ public class ExcelImportService {
         log.debug("resolveHeaderIndex: looking for '{}' (normalized: '{}')", candidate, target);
         Integer exact = hmap.get(target);
         if (exact != null) return exact;
-        // fuzzy contains match
         for (Map.Entry<String,Integer> e : hmap.entrySet()) {
             String k = e.getKey();
             if (k.contains(target) || target.contains(k)) return e.getValue();
-            // tokenized contains: all words in target exist in k
             String[] parts = target.split(" ");
             boolean all = true;
             for (String p : parts) { if (!p.isBlank() && !k.contains(p)) { all = false; break; } }
