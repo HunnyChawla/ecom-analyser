@@ -387,6 +387,22 @@ public class ExcelImportService {
                             orderDateTimeVal = orderOpt.get().getOrderDateTime();
                         }
                     } catch (Exception ignored) {}
+                    // Fallbacks if order is not present yet: try to read SKU and Order Date from payment file columns
+                    if (skuForOrder == null) {
+                        String paymentSkuCandidate = clamp(getCellAny(row, hmap, List.of("SKU", "Supplier SKU", "Product SKU", "Supplier SKU Code"), null), "sku");
+                        if (paymentSkuCandidate != null && !paymentSkuCandidate.isBlank()) {
+                            skuForOrder = paymentSkuCandidate;
+                        }
+                    }
+                    if (orderDateTimeVal == null) {
+                        String orderDateStrAlt = getCellAny(row, hmap, List.of("Order Date", "OrderDate", "Order Created Date"), null);
+                        LocalDate orderDateAlt = parseToLocalDate(orderDateStrAlt);
+                        if (orderDateAlt != null) {
+                            orderDateTimeVal = orderDateAlt.atStartOfDay();
+                        } else if (dispatchDate != null) {
+                            orderDateTimeVal = dispatchDate.atStartOfDay();
+                        }
+                    }
 
                     toSave.add(PaymentEntity.builder()
                             .paymentId(paymentId)
@@ -665,7 +681,19 @@ public class ExcelImportService {
                         orderDateTimeVal = orderOpt.get().getOrderDateTime();
                     }
                 } catch (Exception ignored) {}
-
+                if (skuForOrder == null) {
+                    String paymentSkuCandidate = clamp(getAny(r, headerMap, List.of("sku", "supplier sku", "product sku", "supplier sku code"), null), "sku");
+                    if (paymentSkuCandidate != null && !paymentSkuCandidate.isBlank()) {
+                        skuForOrder = paymentSkuCandidate;
+                    }
+                }
+                if (orderDateTimeVal == null) {
+                    LocalDate orderDateAlt = parseToLocalDate(getAny(r, headerMap, List.of("order date", "orderdate", "order created date"), null));
+                    if (orderDateAlt != null) {
+                        orderDateTimeVal = orderDateAlt.atStartOfDay();
+                    }
+                }
+ 
                 toSave.add(PaymentEntity.builder()
                         .paymentId(paymentId)
                         .orderId(orderId)
