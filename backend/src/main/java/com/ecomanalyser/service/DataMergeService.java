@@ -433,6 +433,20 @@ public class DataMergeService {
                     log.debug("Resolved SKU for order {} from payment: {}", orderId, sku);
                 }
             }
+            
+            // Enhanced quantity resolution: try order quantity first, then fallback to payment quantity
+            if (quantity == null) {
+                // Try to get quantity from any payment for this order
+                quantity = orderPayments.stream()
+                        .map(PaymentEntity::getQuantity)
+                        .filter(Objects::nonNull)
+                        .findFirst()
+                        .orElse(null);
+                
+                if (quantity != null) {
+                    log.debug("Resolved quantity for order {} from payment: {}", orderId, quantity);
+                }
+            }
 
             LocalDate paymentDate = latestPayment != null && latestPayment.getPaymentDateTime() != null
                     ? latestPayment.getPaymentDateTime().toLocalDate()

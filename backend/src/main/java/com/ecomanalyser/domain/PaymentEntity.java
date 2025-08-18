@@ -33,6 +33,9 @@ public class PaymentEntity {
     @Column(name = "sku")
     private String sku;
 
+    @Column(name = "quantity")
+    private Integer quantity;
+
     // Legacy amount column (NOT NULL in DB)
     @Column(name = "amount", precision = 12, scale = 2)
     private BigDecimal amount;

@@ -324,6 +324,17 @@ public class ExcelImportService {
                     BigDecimal productGstPercentage = parseBigDecimal(getCellAny(row, hmap, List.of("Product GST %"), null));
                     BigDecimal listingPriceInclTaxes = parseBigDecimal(getCellAny(row, hmap, List.of("Listing Price (Incl. taxes)"), null));
 
+                    // Extract quantity from payment file
+                    String quantityStr = getCellAny(row, hmap, List.of("Quantity", "Qty", "Order Quantity"), null);
+                    Integer quantity = null;
+                    if (quantityStr != null && !quantityStr.isBlank()) {
+                        try {
+                            quantity = Integer.parseInt(quantityStr.trim());
+                        } catch (NumberFormatException e) {
+                            warn("Row " + r + " (" + orderId + "): Quantity '" + quantityStr + "' invalid; set to null");
+                        }
+                    }
+
                     String skuForOrder = null;
                     LocalDateTime orderDateTimeVal = null;
                     try {
@@ -353,6 +364,7 @@ public class ExcelImportService {
                             .paymentId(paymentId)
                             .orderId(orderId)
                             .sku(skuForOrder)
+                            .quantity(quantity)
                             .amount(amount)
                             .finalSettlementAmount(finalSettlementAmount != null ? finalSettlementAmount : amount)
                             .paymentDateTime(date != null ? date.atStartOfDay() : null)
@@ -412,6 +424,7 @@ public class ExcelImportService {
                             existing.setOrderDateTime(payment.getOrderDateTime());
                             existing.setOrderStatus(payment.getOrderStatus());
                             existing.setSku(payment.getSku());
+                            existing.setQuantity(payment.getQuantity());
                             existing.setTransactionId(payment.getTransactionId());
                             existing.setPriceType(payment.getPriceType());
                             existing.setTotalSaleAmount(payment.getTotalSaleAmount());
@@ -607,6 +620,17 @@ public class ExcelImportService {
                     orderStatus = orderStatus.toUpperCase();
                 }
 
+                // Extract quantity from CSV payment file
+                String quantityStr = getAny(r, headerMap, List.of("quantity", "qty", "order quantity"), null);
+                Integer quantity = null;
+                if (quantityStr != null && !quantityStr.isBlank()) {
+                    try {
+                        quantity = Integer.parseInt(quantityStr.trim());
+                    } catch (NumberFormatException e) {
+                        warn("CSV: orderId=" + orderId + ": Quantity '" + quantityStr + "' invalid; set to null");
+                    }
+                }
+
                 String transactionId = clamp(getAny(r, headerMap, List.of("transaction id", "transaction"), null), "transaction_id");
                 if (transactionId == null || transactionId.isBlank()) { transactionId = paymentId; warn("CSV: orderId=" + orderId + ": Missing transaction id; using payment id as fallback"); }
 
@@ -666,6 +690,7 @@ public class ExcelImportService {
                         .paymentId(paymentId)
                         .orderId(orderId)
                         .sku(skuForOrder)
+                        .quantity(quantity)
                         .amount(amount)
                         .finalSettlementAmount(finalSettlementAmount != null ? finalSettlementAmount : amount)
                         .paymentDateTime(date != null ? date.atStartOfDay() : null)
