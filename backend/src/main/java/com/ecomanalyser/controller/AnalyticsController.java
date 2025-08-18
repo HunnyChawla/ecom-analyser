@@ -36,6 +36,22 @@ public class AnalyticsController {
         return analyticsService.ordersByTime(start, end, agg);
     }
 
+    @GetMapping("/monthly-summary")
+    public Map<String, Object> monthlySummary(
+            @RequestParam("year") int year,
+            @RequestParam("month") int month
+    ) {
+        return analyticsService.getMonthlySummary(year, month);
+    }
+
+    @GetMapping("/monthly-diagnostics")
+    public Map<String, Object> monthlyDiagnostics(
+            @RequestParam("year") int year,
+            @RequestParam("month") int month
+    ) {
+        return analyticsService.getMonthlyDiagnostics(year, month);
+    }
+
     @GetMapping("/payments-by-time")
     public ChartResponse<TimeSeriesPoint> paymentsByTime(
             @RequestParam("start") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,
@@ -85,6 +101,40 @@ public class AnalyticsController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
+    
+    /**
+     * Get loss orders for a specific date range
+     * Returns orders that resulted in losses despite being delivered and paid
+     */
+    @GetMapping("/loss-orders")
+    public ResponseEntity<Map<String, Object>> getLossOrders(
+            @RequestParam("start") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,
+            @RequestParam("end") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate end) {
+        try {
+            var result = analyticsService.getLossOrders(start, end);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("Error getting loss orders: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    /**
+     * Get return analysis for a specific date range
+     * Returns orders with negative settlement amounts and non-delivered statuses
+     */
+    @GetMapping("/return-analysis")
+    public ResponseEntity<Map<String, Object>> getReturnAnalysis(
+            @RequestParam("start") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,
+            @RequestParam("end") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate end) {
+        try {
+            var result = analyticsService.getReturnAnalysis(start, end);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("Error getting return analysis: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
 
     @GetMapping("/profit-trend")
     public ChartResponse<TimeSeriesPoint> profitTrend(
@@ -102,6 +152,23 @@ public class AnalyticsController {
             @RequestParam("agg") AnalyticsService.Aggregation agg
     ) {
         return analyticsService.lossTrend(start, end, agg);
+    }
+
+    /**
+     * Get comprehensive loss metrics for dashboard
+     * Returns total losses from delivered items and returns combined
+     */
+    @GetMapping("/comprehensive-loss-metrics")
+    public ResponseEntity<Map<String, Object>> getComprehensiveLossMetrics(
+            @RequestParam("start") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,
+            @RequestParam("end") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate end) {
+        try {
+            var result = analyticsService.getComprehensiveLossMetrics(start, end);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("Error getting comprehensive loss metrics: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
     }
 
     @GetMapping("/debug/orders")

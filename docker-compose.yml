@@ -19,6 +19,7 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/ecomanalyser
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
+      KAFKA_ENABLED: "false"
     ports:
       - "8080:8080"
     depends_on:

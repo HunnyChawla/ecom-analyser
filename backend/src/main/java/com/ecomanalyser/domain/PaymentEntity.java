@@ -8,7 +8,12 @@ import java.time.LocalDateTime;
 import java.time.LocalDate;
 
 @Entity
-@Table(name = "payments")
+@Table(
+    name = "payments",
+    uniqueConstraints = {
+        @UniqueConstraint(name = "uk_payments_order_transaction", columnNames = {"order_id", "transaction_id"})
+    }
+)
 @Getter
 @Setter
 @NoArgsConstructor
@@ -25,20 +30,31 @@ public class PaymentEntity {
     @Column(name = "order_id", nullable = false)
     private String orderId;
 
-    @Column(nullable = false)
+    @Column(name = "sku")
+    private String sku;
+
+    @Column(name = "quantity")
+    private Integer quantity;
+
+    // Legacy amount column (NOT NULL in DB)
+    @Column(name = "amount", precision = 12, scale = 2)
     private BigDecimal amount;
+
+    // Final settlement amount column
+    @Column(name = "final_settlement_amount", precision = 12, scale = 2)
+    private BigDecimal finalSettlementAmount;
 
     @Column(name = "payment_date_time", nullable = false)
     private LocalDateTime paymentDateTime;
-    
+
+    @Column(name = "order_date_time")
+    private LocalDateTime orderDateTime;
+
     @Column(name = "order_status", nullable = false)
     private String orderStatus;
 
     @Column(name = "transaction_id")
     private String transactionId;
-
-    @Column(name = "final_settlement_amount")
-    private BigDecimal finalSettlementAmount;
 
     @Column(name = "price_type")
     private String priceType;
@@ -121,10 +137,10 @@ public class PaymentEntity {
     @Column(name = "dispatch_date")
     private LocalDate dispatchDate;
 
-    @Column(name = "product_gst_percentage")
+    @Column(name = "product_gst_percentage", precision = 5, scale = 2)
     private BigDecimal productGstPercentage;
 
-    @Column(name = "listing_price_incl_taxes")
+    @Column(name = "listing_price_incl_taxes", precision = 12, scale = 2)
     private BigDecimal listingPriceInclTaxes;
 }
 

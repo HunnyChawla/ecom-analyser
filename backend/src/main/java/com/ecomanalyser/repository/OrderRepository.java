@@ -13,6 +13,10 @@ public interface OrderRepository extends JpaRepository<OrderEntity, Long> {
     List<OrderEntity> findByOrderDateTimeBetween(LocalDateTime start, LocalDateTime end);
     
     Optional<OrderEntity> findByOrderId(String orderId);
+    
+    List<OrderEntity> findByOrderIdIn(List<String> orderIds);
+    
+    Optional<OrderEntity> findBySupplierSku(String supplierSku);
 
     @Query("select o.sku, sum(o.quantity) as qty from OrderEntity o where o.orderDateTime between :start and :end group by o.sku order by qty desc")
     List<Object[]> topOrderedSkus(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);

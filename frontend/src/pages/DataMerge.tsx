@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { 
   Download, 
-  Filter, 
   Search, 
   ChevronLeft, 
   ChevronRight,
@@ -14,6 +13,8 @@ import {
   XCircle,
   AlertTriangle
 } from 'lucide-react';
+
+const api = axios.create({ baseURL: 'http://localhost:8080' });
 
 interface MergedOrderData {
   orderId: string;
@@ -57,11 +58,8 @@ interface MergedOrderData {
   tdsRatePercentage: number | null;
   tds: number | null;
   compensation: number | null;
-  compensationReason: string | null;
   claims: number | null;
-  claimsReason: string | null;
   recovery: number | null;
-  recoveryReason: string | null;
   dispatchDate: string | null;
   productGstPercentage: number | null;
   listingPriceInclTaxes: number | null;
@@ -107,7 +105,7 @@ const DataMerge: React.FC = () => {
   useEffect(() => {
     fetchData();
     fetchStatistics();
-  }, [currentPage, pageSize, statusFilter, sourceFilter]);
+  }, [currentPage, pageSize, statusFilter, sourceFilter, searchTerm]);
 
   const fetchData = async () => {
     try {
@@ -115,26 +113,30 @@ const DataMerge: React.FC = () => {
       
       let url = `/api/data-merge/merged-data/paginated?page=${currentPage}&size=${pageSize}`;
       
+      // Add search query parameter if present
+      if (searchTerm && searchTerm.trim()) {
+        url += `&q=${encodeURIComponent(searchTerm.trim())}`;
+      }
+      
       if (statusFilter) {
         url = `/api/data-merge/merged-data/status/${encodeURIComponent(statusFilter)}`;
       } else if (sourceFilter) {
         url = `/api/data-merge/merged-data/source/${encodeURIComponent(sourceFilter)}`;
       }
       
-      const response = await axios.get(url);
+      console.log('Fetching data from URL:', url);
+      const response = await api.get(url);
+      console.log('Response received:', response.data);
       
       if (response.data.data && response.data.totalRecords !== undefined) {
-        // Paginated response (new structure)
         setMergedData(response.data.data);
         setTotalRecords(response.data.totalRecords);
         setTotalPages(Math.ceil(response.data.totalRecords / response.data.pageSize));
       } else if (Array.isArray(response.data)) {
-        // Filtered response (array of records)
         setMergedData(response.data);
         setTotalRecords(response.data.length);
         setTotalPages(1);
       } else {
-        // Fallback - try to extract data
         console.warn('Unexpected response structure:', response.data);
         setMergedData([]);
         setTotalRecords(0);
@@ -152,10 +154,9 @@ const DataMerge: React.FC = () => {
 
   const fetchStatistics = async () => {
     try {
-      const response = await axios.get('/api/data-merge/statistics');
+      const response = await api.get('/api/data-merge/statistics');
       setStatistics(response.data);
       
-      // Extract available filter options
       if (response.data.finalStatusBreakdown) {
         setAvailableStatuses(Object.keys(response.data.finalStatusBreakdown));
       }
@@ -164,6 +165,7 @@ const DataMerge: React.FC = () => {
       }
     } catch (error) {
       console.error('Error fetching statistics:', error);
+      setStatistics(null);
     }
   };
 
@@ -246,19 +248,8 @@ const DataMerge: React.FC = () => {
     }
   };
 
-  const filteredData = mergedData.filter(record => {
-    if (searchTerm) {
-      const searchLower = searchTerm.toLowerCase();
-      return (
-        record.orderId.toLowerCase().includes(searchLower) ||
-        (record.sku && record.sku.toLowerCase().includes(searchLower)) ||
-        (record.productName && record.productName.toLowerCase().includes(searchLower)) ||
-        (record.finalStatus && record.finalStatus.toLowerCase().includes(searchLower)) ||
-        (record.customerState && record.customerState.toLowerCase().includes(searchLower))
-      );
-    }
-    return true;
-  });
+  // Server-side search is now handled by the backend, so we use mergedData directly
+  const displayData = mergedData;
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -279,7 +270,7 @@ const DataMerge: React.FC = () => {
                 </div>
                 <div className="ml-4">
                   <p className="text-sm font-medium text-gray-600">Total Records</p>
-                  <p className="text-2xl font-semibold text-gray-900">{statistics.totalMergedRecords.toLocaleString()}</p>
+                  <p className="text-2xl font-semibold text-gray-900">{Number(statistics?.totalMergedRecords || 0).toLocaleString()}</p>
                 </div>
               </div>
             </div>
@@ -291,7 +282,7 @@ const DataMerge: React.FC = () => {
                 </div>
                 <div className="ml-4">
                   <p className="text-sm font-medium text-gray-600">Unique Orders</p>
-                  <p className="text-2xl font-semibold text-gray-900">{statistics.uniqueOrders.toLocaleString()}</p>
+                  <p className="text-2xl font-semibold text-gray-900">{Number(statistics?.uniqueOrders || 0).toLocaleString()}</p>
                 </div>
               </div>
             </div>
@@ -304,7 +295,7 @@ const DataMerge: React.FC = () => {
                 <div className="ml-4">
                   <p className="text-sm font-medium text-gray-600">Payment Source</p>
                   <p className="text-2xl font-semibold text-gray-900">
-                    {statistics.statusSourceBreakdown['PAYMENT_FILE'] || 0}
+                    {Number((statistics?.statusSourceBreakdown || {})['PAYMENT_FILE'] || 0).toLocaleString()}
                   </p>
                 </div>
               </div>
@@ -318,7 +309,7 @@ const DataMerge: React.FC = () => {
                 <div className="ml-4">
                   <p className="text-sm font-medium text-gray-600">Order Source</p>
                   <p className="text-2xl font-semibold text-gray-900">
-                    {statistics.statusSourceBreakdown['ORDER_FILE'] || 0}
+                    {Number((statistics?.statusSourceBreakdown || {})['ORDER_FILE'] || 0).toLocaleString()}
                   </p>
                 </div>
               </div>
@@ -349,23 +340,23 @@ const DataMerge: React.FC = () => {
             <h3 className="text-lg font-medium text-gray-900 mb-4">Data Quality Metrics</h3>
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
               <div className="text-center">
-                <p className="text-2xl font-semibold text-green-600">{statistics.dataQuality.skuCoveragePercentage}%</p>
+                <p className="text-2xl font-semibold text-green-600">{Number(statistics?.dataQuality?.skuCoveragePercentage || 0)}</p>
                 <p className="text-sm text-gray-600">SKU Coverage</p>
               </div>
               <div className="text-center">
-                <p className="text-2xl font-semibold text-blue-600">{statistics.dataQuality.recordsWithSku.toLocaleString()}</p>
+                <p className="text-2xl font-semibold text-blue-600">{Number(statistics?.dataQuality?.recordsWithSku || 0).toLocaleString()}</p>
                 <p className="text-sm text-gray-600">Records with SKU</p>
               </div>
               <div className="text-center">
-                <p className="text-2xl font-semibold text-red-600">{statistics.dataQuality.recordsWithoutSku.toLocaleString()}</p>
+                <p className="text-2xl font-semibold text-red-600">{Number(statistics?.dataQuality?.recordsWithoutSku || 0).toLocaleString()}</p>
                 <p className="text-sm text-gray-600">Records without SKU</p>
               </div>
               <div className="text-center">
-                <p className="text-2xl font-semibold text-purple-600">{statistics.dataQuality.recordsWithQuantity.toLocaleString()}</p>
+                <p className="text-2xl font-semibold text-purple-600">{Number(statistics?.dataQuality?.recordsWithQuantity || 0).toLocaleString()}</p>
                 <p className="text-sm text-gray-600">Records with Quantity</p>
               </div>
               <div className="text-center">
-                <p className="text-2xl font-semibold text-orange-600">{statistics.dataQuality.recordsWithProductName.toLocaleString()}</p>
+                <p className="text-2xl font-semibold text-orange-600">{Number(statistics?.dataQuality?.recordsWithProductName || 0).toLocaleString()}</p>
                 <p className="text-sm text-gray-600">Records with Product Name</p>
               </div>
             </div>
@@ -383,7 +374,10 @@ const DataMerge: React.FC = () => {
                   type="text"
                   placeholder="Search orders, SKUs, products..."
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e) => {
+                    console.log('Search term changed to:', e.target.value);
+                    setSearchTerm(e.target.value);
+                  }}
                   className="pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -457,7 +451,7 @@ const DataMerge: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredData.map((record, index) => (
+                    {displayData.map((record, index) => (
                       <tr key={`${record.orderId}-${index}`} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm font-medium text-gray-900">{record.orderId}</div>
@@ -471,7 +465,7 @@ const DataMerge: React.FC = () => {
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">{record.quantity || 'N/A'}</div>
+                          <div className="text-sm text-gray-900">{record.quantity ?? 'N/A'}</div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
@@ -492,7 +486,7 @@ const DataMerge: React.FC = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm text-gray-900">
-                            ₹{record.amount?.toLocaleString() || 'N/A'}
+                            {record.amount != null ? `₹${Number(record.amount).toLocaleString()}` : 'N/A'}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">

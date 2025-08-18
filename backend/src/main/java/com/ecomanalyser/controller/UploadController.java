@@ -18,19 +18,29 @@ public class UploadController {
     @PostMapping("/orders")
     public ResponseEntity<?> uploadOrders(@RequestPart("file") MultipartFile file) throws Exception {
         int count = excelImportService.importOrders(file);
-        return ResponseEntity.ok().body("Imported orders: " + count);
+        var warnings = excelImportService.consumeWarnings();
+        return ResponseEntity.ok().body(java.util.Map.of(
+                "message", "Imported orders: " + count,
+                "warnings", warnings,
+                "warningCount", warnings.size()
+        ));
     }
 
     @PostMapping("/payments")
     public ResponseEntity<?> uploadPayments(@RequestPart("file") MultipartFile file) throws Exception {
         int count = excelImportService.importPayments(file);
-        return ResponseEntity.ok().body("Imported payments: " + count);
+        var warnings = excelImportService.consumeWarnings();
+        return ResponseEntity.ok().body(java.util.Map.of(
+                "message", "Imported payments: " + count,
+                "warnings", warnings,
+                "warningCount", warnings.size()
+        ));
     }
 
     @PostMapping("/sku-prices")
     public ResponseEntity<?> uploadSkuPrices(@RequestPart("file") MultipartFile file) throws Exception {
         int count = excelImportService.importSkuPrices(file);
-        return ResponseEntity.ok().body("Imported sku prices: " + count);
+        return ResponseEntity.ok().body(java.util.Map.of("message", "Imported sku prices: " + count));
     }
 }
 

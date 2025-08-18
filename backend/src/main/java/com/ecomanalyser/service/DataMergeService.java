@@ -2,8 +2,10 @@ package com.ecomanalyser.service;
 
 import com.ecomanalyser.domain.OrderEntity;
 import com.ecomanalyser.domain.PaymentEntity;
+import com.ecomanalyser.domain.MergedOrderPaymentEntity;
 import com.ecomanalyser.repository.OrderRepository;
 import com.ecomanalyser.repository.PaymentRepository;
+import com.ecomanalyser.repository.MergedOrderPaymentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -21,6 +23,7 @@ public class DataMergeService {
 
     private final OrderRepository orderRepository;
     private final PaymentRepository paymentRepository;
+    private final MergedOrderPaymentRepository mergedRepo;
 
     /**
      * Merged data structure containing combined order and payment information
@@ -339,6 +342,146 @@ public class DataMergeService {
             throw e;
         }
     }
+
+    /**
+     * Rebuild merged table from current orders and payments
+     */
+    public int rebuildMergedTable() {
+        log.info("Rebuilding merged_orders with aggregation and status priority rules...");
+
+        // Load all orders and payments
+        List<OrderEntity> orders = orderRepository.findAll();
+        List<PaymentEntity> payments = paymentRepository.findAll();
+
+        Map<String, OrderEntity> orderById = orders.stream()
+                .collect(Collectors.toMap(OrderEntity::getOrderId, o -> o));
+
+        Map<String, List<PaymentEntity>> paymentsByOrder = payments.stream()
+                .collect(Collectors.groupingBy(PaymentEntity::getOrderId));
+
+        // All orderIds from either side
+        Set<String> allOrderIds = new HashSet<>();
+        allOrderIds.addAll(orderById.keySet());
+        allOrderIds.addAll(paymentsByOrder.keySet());
+
+        List<MergedOrderPaymentEntity> toPersist = new ArrayList<>(allOrderIds.size());
+
+        for (String orderId : allOrderIds) {
+            OrderEntity order = orderById.get(orderId);
+            List<PaymentEntity> orderPayments = paymentsByOrder.getOrDefault(orderId, Collections.emptyList());
+
+            // Aggregate settlement amount across all payment rows for this order
+            BigDecimal settlementSum = orderPayments.stream()
+                    .map(p -> p.getFinalSettlementAmount() != null ? p.getFinalSettlementAmount() : p.getAmount())
+                    .filter(Objects::nonNull)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            // Choose latest payment by paymentDateTime
+            PaymentEntity latestPayment = orderPayments.stream()
+                    .filter(p -> p.getPaymentDateTime() != null)
+                    .max(Comparator.comparing(PaymentEntity::getPaymentDateTime))
+                    .orElse(null);
+
+            // Resolve status from payments first: pick first non-blank status scanning by most recent first
+            String resolvedStatus = null;
+            if (!orderPayments.isEmpty()) {
+                List<PaymentEntity> sorted = new ArrayList<>(orderPayments);
+                sorted.sort(Comparator.comparing(PaymentEntity::getPaymentDateTime, Comparator.nullsLast(Comparator.naturalOrder())).reversed());
+                for (PaymentEntity p : sorted) {
+                    if (p.getOrderStatus() != null && !p.getOrderStatus().isBlank() && !"unknown".equalsIgnoreCase(p.getOrderStatus())) {
+                        resolvedStatus = p.getOrderStatus();
+                        break;
+                    }
+                }
+            }
+            if (resolvedStatus == null) {
+                // Fall back to order's status if available (using reasonForCreditEntry as status surrogate)
+                if (order != null && order.getReasonForCreditEntry() != null && !order.getReasonForCreditEntry().isBlank()) {
+                    resolvedStatus = order.getReasonForCreditEntry();
+                } else {
+                    resolvedStatus = "UNKNOWN";
+                }
+            }
+
+            // Compute other fields
+            BigDecimal orderAmount = null;
+            Integer quantity = null;
+            String sku = null;
+            String state = null;
+            LocalDate orderDate = null;
+            if (order != null) {
+                quantity = order.getQuantity();
+                sku = order.getSku();
+                state = order.getCustomerState();
+                orderDate = order.getOrderDateTime() != null ? order.getOrderDateTime().toLocalDate() : null;
+                if (order.getSellingPrice() != null && order.getQuantity() != null) {
+                    orderAmount = order.getSellingPrice().multiply(BigDecimal.valueOf(order.getQuantity()));
+                }
+            }
+            
+            // Enhanced SKU resolution: try order SKU first, then fallback to payment SKU
+            if (sku == null || sku.isBlank()) {
+                // Try to get SKU from any payment for this order
+                sku = orderPayments.stream()
+                        .map(PaymentEntity::getSku)
+                        .filter(Objects::nonNull)
+                        .filter(s -> !s.isBlank())
+                        .findFirst()
+                        .orElse(null);
+                
+                if (sku != null) {
+                    log.debug("Resolved SKU for order {} from payment: {}", orderId, sku);
+                }
+            }
+            
+            // Enhanced quantity resolution: try order quantity first, then fallback to payment quantity
+            if (quantity == null) {
+                // Try to get quantity from any payment for this order
+                quantity = orderPayments.stream()
+                        .map(PaymentEntity::getQuantity)
+                        .filter(Objects::nonNull)
+                        .findFirst()
+                        .orElse(null);
+                
+                if (quantity != null) {
+                    log.debug("Resolved quantity for order {} from payment: {}", orderId, quantity);
+                }
+            }
+
+            LocalDate paymentDate = latestPayment != null && latestPayment.getPaymentDateTime() != null
+                    ? latestPayment.getPaymentDateTime().toLocalDate()
+                    : null;
+            // Prefer order_date_time from payments when available, else fallback to orders
+            if (latestPayment != null && latestPayment.getOrderDateTime() != null) {
+                orderDate = latestPayment.getOrderDateTime().toLocalDate();
+            }
+            String transactionId = latestPayment != null && latestPayment.getTransactionId() != null && !latestPayment.getTransactionId().isBlank()
+                    ? latestPayment.getTransactionId()
+                    : orderPayments.stream().map(PaymentEntity::getTransactionId).filter(Objects::nonNull).filter(s -> !s.isBlank()).findFirst().orElse(null);
+            String priceType = latestPayment != null ? latestPayment.getPriceType() : null;
+            LocalDate dispatchDate = latestPayment != null ? latestPayment.getDispatchDate() : null;
+
+            toPersist.add(MergedOrderPaymentEntity.builder()
+                    .orderId(orderId)
+                    .orderAmount(orderAmount)
+                    .settlementAmount(settlementSum)
+                    .orderStatus(resolvedStatus)
+                    .skuId(sku)
+                    .orderDate(orderDate)
+                    .paymentDate(paymentDate)
+                    .quantity(quantity)
+                    .state(state)
+                    .transactionId(transactionId)
+                    .dispatchDate(dispatchDate)
+                    .priceType(priceType)
+                    .build());
+        }
+
+        mergedRepo.deleteAllInBatch();
+        mergedRepo.saveAll(toPersist);
+        log.info("Rebuilt merged_orders with {} rows", toPersist.size());
+        return toPersist.size();
+    }
     
     /**
      * Create merged data from order only (when no payment exists)
@@ -362,6 +505,11 @@ public class DataMergeService {
         
         // Set final status from order
         merged.setFinalStatus(order.getReasonForCreditEntry());
+        
+        // Log warning if SKU is missing
+        if (merged.getSku() == null || merged.getSku().isBlank()) {
+            log.warn("Order {} has no SKU information", order.getOrderId());
+        }
         
         return merged;
     }
@@ -391,13 +539,22 @@ public class DataMergeService {
             merged.setOrderId(payment.getOrderId());
         }
         
+        // Enhanced SKU resolution: try order SKU first, then fallback to payment SKU
+        if (merged.getSku() == null || merged.getSku().isBlank()) {
+            String paymentSku = payment.getSku();
+            if (paymentSku != null && !paymentSku.isBlank()) {
+                merged.setSku(paymentSku);
+                log.debug("Resolved SKU for order {} from payment: {}", merged.getOrderId(), paymentSku);
+            }
+        }
+        
         // Copy payment data
         merged.setPaymentId(payment.getPaymentId());
         merged.setAmount(payment.getAmount());
         merged.setPaymentDateTime(payment.getPaymentDateTime());
         merged.setOrderStatus(payment.getOrderStatus());
         merged.setTransactionId(payment.getTransactionId());
-        merged.setFinalSettlementAmount(payment.getFinalSettlementAmount());
+        merged.setFinalSettlementAmount(payment.getAmount());
         merged.setPriceType(payment.getPriceType());
         merged.setTotalSaleAmount(payment.getTotalSaleAmount());
         merged.setTotalSaleReturnAmount(payment.getTotalSaleReturnAmount());
@@ -441,13 +598,13 @@ public class DataMergeService {
         String paymentStatus = payment.getOrderStatus();
         String orderStatus = order != null ? order.getReasonForCreditEntry() : null;
         
-        if (paymentStatus != null && !paymentStatus.trim().isEmpty()) {
-            // Payment status is not blank - use it as final status
+        if (paymentStatus != null && !paymentStatus.trim().isEmpty() && !"unknown".equalsIgnoreCase(paymentStatus)) {
+            // Payment status is not blank and not "unknown" - use it as final status
             merged.setFinalStatus(paymentStatus);
             merged.setStatusSource("PAYMENT_FILE");
             log.debug("Using payment status for order {}: {}", merged.getOrderId(), paymentStatus);
         } else if (orderStatus != null && !orderStatus.trim().isEmpty()) {
-            // Payment status is blank, use order status
+            // Payment status is blank/unknown, use order status
             merged.setFinalStatus(orderStatus);
             merged.setStatusSource("ORDER_FILE");
             log.debug("Using order status for order {}: {}", merged.getOrderId(), orderStatus);

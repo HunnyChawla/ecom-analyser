@@ -48,6 +48,9 @@ public class OrderEntity {
     @Column(name = "supplier_discounted_price")
     private BigDecimal supplierDiscountedPrice;
 
+    @Column(name = "supplier_sku")
+    private String supplierSku;
+
     @Column(name = "packet_id")
     private String packetId;
 

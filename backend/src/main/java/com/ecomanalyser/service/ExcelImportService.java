@@ -44,6 +44,31 @@ public class ExcelImportService {
     private final OrderRepository orderRepository;
     private final PaymentRepository paymentRepository;
     private final SkuPriceRepository skuPriceRepository;
+    private final DataMergeService dataMergeService;
+
+    // Collect per-request import warnings (thread-local for web requests)
+    private final ThreadLocal<java.util.List<String>> importWarnings = ThreadLocal.withInitial(java.util.ArrayList::new);
+
+    private void warn(String message) {
+        importWarnings.get().add(message);
+    }
+
+    public java.util.List<String> consumeWarnings() {
+        var list = new java.util.ArrayList<>(importWarnings.get());
+        importWarnings.get().clear();
+        return list;
+    }
+
+    // Truncate overly long strings to fit VARCHAR(255)
+    private String clamp(String value, String fieldName) {
+        if (value == null) return null;
+        String v = value.trim();
+        if (v.length() > 255) {
+            warn(fieldName + " length " + v.length() + " > 255; truncated");
+            return v.substring(0, 255);
+        }
+        return v;
+    }
 
     @Transactional
     public int importOrders(MultipartFile file) throws Exception {
@@ -53,6 +78,8 @@ public class ExcelImportService {
             return importOrdersCsv(file);
         } else {
             log.info("Detected Excel file, using Excel parser");
+            // Reset warnings for this run
+            importWarnings.get().clear();
             List<OrderEntity> toSave = new ArrayList<>();
             try (InputStream is = file.getInputStream(); Workbook wb = new XSSFWorkbook(is)) {
                 Sheet sheet = wb.getSheetAt(0);
@@ -73,25 +100,41 @@ public class ExcelImportService {
                     if (row == null) continue;
                     
                     String orderId = getCellAny(row, hmap, List.of("Sub Order No", "Order Id", "Order ID", "Sub Order"), null);
-                    if (orderId.isBlank()) continue;
+                    if (orderId == null || orderId.isBlank()) {
+                        orderId = "UNKNOWN-" + System.currentTimeMillis() + "-" + r;
+                        warn("Row " + r + ": Missing orderId; generated " + orderId);
+                    }
+                    orderId = clamp(orderId, "order_id");
                     
                     String sku = getCellAny(row, hmap, List.of("SKU", "Supplier SKU", "Product SKU"), null);
-                    if (sku.isBlank()) continue;
+                    if (sku == null || sku.isBlank()) {
+                        sku = "UNKNOWN";
+                        warn("Row " + r + " (" + orderId + "): Missing SKU; set to UNKNOWN");
+                    }
                     
                     String qtyStr = getCellAny(row, hmap, List.of("Quantity", "Qty"), null);
                     int qty = parseIntFlexible(qtyStr);
-                    if (qty <= 0) continue;
+                    if (qty <= 0) {
+                        warn("Row " + r + " (" + orderId + "): Quantity invalid; set to 0");
+                        qty = 0;
+                    }
                     
                     String priceStr = getCellAny(row, hmap, List.of("Supplier Discounted Price (Incl GST and Commision)",
                             "Supplier Discounted Price (Incl GST and Commission)",
                             "Supplier Listed Price (Incl. GST + Commission)",
                             "Listing Price", "Unit Price", "Price"), null);
                     BigDecimal price = parseBigDecimal(priceStr);
-                    if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) continue;
+                    if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) {
+                        warn("Row " + r + " (" + orderId + "): Selling price missing/invalid; set to 0");
+                        price = BigDecimal.ZERO;
+                    }
                     
                     String dateStr = getCellAny(row, hmap, List.of("Order Date", "Date", "OrderDate"), null);
                     LocalDate date = parseToLocalDate(dateStr);
-                    if (date == null) continue;
+                    if (date == null) {
+                        warn("Row " + r + " (" + orderId + "): Order date missing/invalid; set to today");
+                        date = LocalDate.now();
+                    }
                     
                     // Get all additional fields
                     String productName = getCellAny(row, hmap, List.of("Product Name", "Product"), null);
@@ -103,6 +146,9 @@ public class ExcelImportService {
                     BigDecimal supplierDiscountedPrice = parseBigDecimal(supplierDiscountedPriceStr);
                     String packetId = getCellAny(row, hmap, List.of("Packet Id", "Packet ID"), null);
                     String reasonForCreditEntry = getCellAny(row, hmap, List.of("Reason for Credit Entry", "Credit Entry Reason"), null);
+                    if (reasonForCreditEntry != null) {
+                        reasonForCreditEntry = reasonForCreditEntry.toUpperCase();
+                    }
                     
                     toSave.add(OrderEntity.builder()
                             .orderId(orderId)
@@ -126,12 +172,10 @@ public class ExcelImportService {
             int savedCount = 0;
             for (OrderEntity order : toSave) {
                 try {
-                    // Check if order already exists
                     var existingOrder = orderRepository.findByOrderId(order.getOrderId());
                     if (existingOrder.isPresent()) {
                         log.info("Order {} already exists, updating...", order.getOrderId());
                         var existing = existingOrder.get();
-                        // Update all fields
                         existing.setSku(order.getSku());
                         existing.setQuantity(order.getQuantity());
                         existing.setSellingPrice(order.getSellingPrice());
@@ -146,7 +190,6 @@ public class ExcelImportService {
                         orderRepository.save(existing);
                         savedCount++;
                     } else {
-                        // New order, save it
                         orderRepository.save(order);
                         savedCount++;
                     }
@@ -157,6 +200,12 @@ public class ExcelImportService {
             }
             
             log.info("Successfully saved {} order entities", savedCount);
+            // Trigger merged table rebuild after orders upload
+            try {
+                dataMergeService.rebuildMergedTable();
+            } catch (Exception e) {
+                log.warn("Failed to rebuild merged_orders after orders upload: {}", e.getMessage());
+            }
             return savedCount;
         }
     }
@@ -169,9 +218,9 @@ public class ExcelImportService {
             return importPaymentsCsv(file);
         } else {
             log.info("Detected Excel file, using Excel parser");
+            importWarnings.get().clear();
             List<PaymentEntity> toSave = new ArrayList<>();
             try (InputStream is = file.getInputStream(); Workbook wb = new XSSFWorkbook(is)) {
-                // Look for the "Order Payments" sheet specifically
                 Sheet sheet = null;
                 for (int i = 0; i < wb.getNumberOfSheets(); i++) {
                     String sheetName = wb.getSheetName(i);
@@ -182,158 +231,146 @@ public class ExcelImportService {
                         break;
                     }
                 }
-                
                 if (sheet == null) {
                     log.warn("'Order Payments' sheet not found, falling back to first sheet");
                     sheet = wb.getSheetAt(0);
                 }
-                
                 log.info("Excel sheet: {}, total rows: {}", sheet.getSheetName(), sheet.getPhysicalNumberOfRows());
                 if (sheet.getPhysicalNumberOfRows() == 0) return 0;
 
-                // Use a single header row approach - try row 1 (2nd row) as per your sheet description
                 Row header = sheet.getRow(1);
                 if (header == null) {
                     log.warn("Header row 1 not found, trying first row");
                     header = sheet.getRow(0);
                 }
-                
                 if (header == null) {
                     log.error("No header row found");
                     return 0;
                 }
-                
-                log.info("Using header row at index: {}", header.getRowNum());
                 Map<String,Integer> hmap = buildHeaderIndex(header);
-                log.info("Header index map: {}", hmap);
-                
-                int firstDataRow = header.getRowNum() + 2; // data starts 2 rows after header
-                log.info("First data row: {}", firstDataRow);
-                
-                // Use getPhysicalNumberOfRows() for more reliable row counting
+                int firstDataRow = header.getRowNum() + 2;
                 int totalRows = sheet.getPhysicalNumberOfRows();
-                int lastRowIndex = totalRows - 1; // Convert to 0-based index
-                log.info("Total physical rows: {}, Last row index: {}, Will process rows {} to {}", 
-                        totalRows, lastRowIndex, firstDataRow, lastRowIndex);
-                
+                int lastRowIndex = totalRows - 1;
+
                 int processedRows = 0;
                 int skippedRows = 0;
                 int validRows = 0;
-                
+
                 for (int r = firstDataRow; r <= lastRowIndex; r++) {
                     processedRows++;
                     Row row = sheet.getRow(r);
-                    if (row == null) {
-                        skippedRows++;
-                        log.debug("Row {}: Skipping null row", r);
-                        continue;
-                    }
-                    
+                    if (row == null) { skippedRows++; continue; }
+
                     String orderId = getCellAny(row, hmap, List.of("Sub Order No", "Order Id", "Order ID", "Sub Order"), null);
-                    if (orderId.isBlank()) {
-                        skippedRows++;
-                        log.debug("Row {}: Skipping row with blank orderId", r);
-                        continue;
+                    if (orderId == null || orderId.isBlank()) {
+                        orderId = "UNKNOWN-" + System.currentTimeMillis() + "-" + r;
+                        warn("Row " + r + ": Missing orderId; generated " + orderId);
                     }
-                    
-                    String paymentId = getCellAny(row, hmap, List.of("Transaction ID", "Payment Id", "Payment ID", "Transaction"), null);
-                    if (paymentId.isBlank()) {
-                        paymentId = orderId + "-PAY"; // fallback payment ID
-                    }
-                    
+                    orderId = clamp(orderId, "order_id");
+
+                    String paymentId = clamp(getCellAny(row, hmap, List.of("Transaction ID", "Payment Id", "Payment ID", "Transaction"), null), "payment_id");
+                    if (paymentId == null || paymentId.isBlank()) paymentId = orderId + "-PAY";
+
                     String amtStr = getCellAny(row, hmap, List.of("Final Settlement Amount", "Net Settlement Amount", "Amount"), null);
                     String dateStr = getCellAny(row, hmap, List.of("Payment Date", "Settlement Date", "Date"), null);
-                    
-                    if (amtStr.isBlank() && dateStr.isBlank()) {
+
+                    if ((amtStr == null || amtStr.isBlank()) && (dateStr == null || dateStr.isBlank())) {
                         skippedRows++;
-                        log.debug("Row {}: Skipping row with blank amount and date", r);
-                        continue; // likely an empty row
-                    }
-                    
-                    BigDecimal amount = parseBigDecimal(amtStr);
-                    LocalDate date = parseToLocalDate(dateStr);
-                    
-                    // Get order status from column F (Live Order Status)
-                    String orderStatus = getCellAny(row, hmap, List.of("Live Order Status", "Order Status", "Status"), null);
-                    
-                    // Validate that order status is not null or blank
-                    if (orderStatus == null || orderStatus.isBlank()) {
-                        skippedRows++;
-                        log.warn("Row {}: Skipping row with null/blank order status", r);
                         continue;
                     }
-                    
-                    validRows++;
-                    log.debug("Row {}: Valid row - orderId={}, paymentId={}, amount={}, date={}, status={}", 
-                             r, orderId, paymentId, amount, date, orderStatus);
-                    
-                    // Get all additional payment fields
-                    String transactionId = getCellAny(row, hmap, List.of("Transaction ID", "Transaction Id"), null);
-                    String finalSettlementAmountStr = getCellAny(row, hmap, List.of("Final Settlement Amount", "Net Settlement Amount"), null);
-                    BigDecimal finalSettlementAmount = parseBigDecimal(finalSettlementAmountStr);
-                    String priceType = getCellAny(row, hmap, List.of("Price Type"), null);
-                    String totalSaleAmountStr = getCellAny(row, hmap, List.of("Total Sale Amount (Incl. Shipping & GST)"), null);
-                    BigDecimal totalSaleAmount = parseBigDecimal(totalSaleAmountStr);
-                    String totalSaleReturnAmountStr = getCellAny(row, hmap, List.of("Total Sale Return Amount (Incl. Shipping & GST)"), null);
-                    BigDecimal totalSaleReturnAmount = parseBigDecimal(totalSaleReturnAmountStr);
-                    String fixedFeeStr = getCellAny(row, hmap, List.of("Fixed Fee (Incl. GST)"), null);
-                    BigDecimal fixedFee = parseBigDecimal(fixedFeeStr);
-                    String warehousingFeeStr = getCellAny(row, hmap, List.of("Warehousing fee (Incl. GST)"), null);
-                    BigDecimal warehousingFee = parseBigDecimal(warehousingFeeStr);
-                    String returnPremiumStr = getCellAny(row, hmap, List.of("Return premium (Incl. GST)", "Return premium (Incl. GST) of Return"), null);
-                    BigDecimal returnPremium = parseBigDecimal(returnPremiumStr);
-                    String meeshoCommissionPercentageStr = getCellAny(row, hmap, List.of("Meesho Commission Percentage"), null);
-                    BigDecimal meeshoCommissionPercentage = parseBigDecimal(meeshoCommissionPercentageStr);
-                    String meeshoCommissionStr = getCellAny(row, hmap, List.of("Meesho Commission (Incl. GST)"), null);
-                    BigDecimal meeshoCommission = parseBigDecimal(meeshoCommissionStr);
-                    String meeshoGoldPlatformFeeStr = getCellAny(row, hmap, List.of("Meesho gold platform fee (Incl. GST)"), null);
-                    BigDecimal meeshoGoldPlatformFee = parseBigDecimal(meeshoGoldPlatformFeeStr);
-                    String meeshoMallPlatformFeeStr = getCellAny(row, hmap, List.of("Meesho mall platform fee (Incl. GST)"), null);
-                    BigDecimal meeshoMallPlatformFee = parseBigDecimal(meeshoMallPlatformFeeStr);
-                    String returnShippingChargeStr = getCellAny(row, hmap, List.of("Return Shipping Charge (Incl. GST)"), null);
-                    BigDecimal returnShippingCharge = parseBigDecimal(returnShippingChargeStr);
-                    String gstCompensationStr = getCellAny(row, hmap, List.of("GST Compensation (PRP Shipping)"), null);
-                    BigDecimal gstCompensation = parseBigDecimal(gstCompensationStr);
-                    String shippingChargeStr = getCellAny(row, hmap, List.of("Shipping Charge (Incl. GST)"), null);
-                    BigDecimal shippingCharge = parseBigDecimal(shippingChargeStr);
-                    String otherSupportServiceChargesStr = getCellAny(row, hmap, List.of("Other Support Service Charges (Excl. GST)"), null);
-                    BigDecimal otherSupportServiceCharges = parseBigDecimal(otherSupportServiceChargesStr);
-                    String waiversStr = getCellAny(row, hmap, List.of("Waivers (Excl. GST)"), null);
-                    BigDecimal waivers = parseBigDecimal(waiversStr);
-                    String netOtherSupportServiceChargesStr = getCellAny(row, hmap, List.of("Net Other Support Service Charges (Excl. GST)"), null);
-                    BigDecimal netOtherSupportServiceCharges = parseBigDecimal(netOtherSupportServiceChargesStr);
-                    String gstOnNetOtherSupportServiceChargesStr = getCellAny(row, hmap, List.of("GST on Net Other Support Service Charges"), null);
-                    BigDecimal gstOnNetOtherSupportServiceCharges = parseBigDecimal(gstOnNetOtherSupportServiceChargesStr);
-                    String tcsStr = getCellAny(row, hmap, List.of("TCS"), null);
-                    BigDecimal tcs = parseBigDecimal(tcsStr);
-                    String tdsRatePercentageStr = getCellAny(row, hmap, List.of("TDS Rate %"), null);
-                    BigDecimal tdsRatePercentage = parseBigDecimal(tdsRatePercentageStr);
-                    String tdsStr = getCellAny(row, hmap, List.of("TDS"), null);
-                    BigDecimal tds = parseBigDecimal(tdsStr);
-                    String compensationStr = getCellAny(row, hmap, List.of("Compensation"), null);
-                    BigDecimal compensation = parseBigDecimal(compensationStr);
-                    String claimsStr = getCellAny(row, hmap, List.of("Claims"), null);
-                    BigDecimal claims = parseBigDecimal(claimsStr);
-                    String recoveryStr = getCellAny(row, hmap, List.of("Recovery"), null);
-                    BigDecimal recovery = parseBigDecimal(recoveryStr);
-                    String compensationReason = getCellAny(row, hmap, List.of("Compensation Reason"), null);
-                    String claimsReason = getCellAny(row, hmap, List.of("Claims Reason"), null);
-                    String recoveryReason = getCellAny(row, hmap, List.of("Recovery Reason"), null);
-                    String dispatchDateStr = getCellAny(row, hmap, List.of("Dispatch Date"), null);
-                    LocalDate dispatchDate = parseToLocalDate(dispatchDateStr);
-                    String productGstPercentageStr = getCellAny(row, hmap, List.of("Product GST %"), null);
-                    BigDecimal productGstPercentage = parseBigDecimal(productGstPercentageStr);
-                    String listingPriceInclTaxesStr = getCellAny(row, hmap, List.of("Listing Price (Incl. taxes)"), null);
-                    BigDecimal listingPriceInclTaxes = parseBigDecimal(listingPriceInclTaxesStr);
-                    
-                    toSave.add(PaymentEntity.builder()
+
+                    BigDecimal amount = parseBigDecimal(amtStr);
+                    LocalDate date = parseToLocalDate(dateStr);
+                    if (amount == null) { amount = BigDecimal.ZERO; warn("Row " + r + " (" + orderId + "): Amount missing/invalid; set to 0"); }
+                    if (date == null) { date = LocalDate.now(); warn("Row " + r + " (" + orderId + "): Payment date missing/invalid; set to today"); }
+
+                    String orderStatus = clamp(getCellAny(row, hmap, List.of("Live Order Status", "Order Status", "Status"), null), "order_status");
+                    if (orderStatus == null || orderStatus.isBlank()) { orderStatus = "UNKNOWN"; warn("Row " + r + " (" + orderId + "): Missing order status; set to UNKNOWN"); }
+                    if (orderStatus != null && !orderStatus.equals("UNKNOWN")) {
+                        orderStatus = orderStatus.toUpperCase();
+                    }
+
+                    String transactionId = clamp(getCellAny(row, hmap, List.of("Transaction ID", "Transaction Id"), null), "transaction_id");
+                    if (transactionId == null || transactionId.isBlank()) { transactionId = paymentId; warn("Row " + r + " (" + orderId + "): Missing transaction id; using payment id as fallback"); }
+
+                    BigDecimal finalSettlementAmount = parseBigDecimal(getCellAny(row, hmap, List.of("Final Settlement Amount", "Net Settlement Amount"), null));
+                    String priceType = clamp(getCellAny(row, hmap, List.of("Price Type"), null), "price_type");
+                    BigDecimal totalSaleAmount = parseBigDecimal(getCellAny(row, hmap, List.of("Total Sale Amount (Incl. Shipping & GST)"), null));
+                    BigDecimal totalSaleReturnAmount = parseBigDecimal(getCellAny(row, hmap, List.of("Total Sale Return Amount (Incl. Shipping & GST)"), null));
+                    BigDecimal fixedFee = parseBigDecimal(getCellAny(row, hmap, List.of("Fixed Fee (Incl. GST)"), null));
+                    BigDecimal warehousingFee = parseBigDecimal(getCellAny(row, hmap, List.of("Warehousing fee (Incl. GST)"), null));
+                    BigDecimal returnPremium = parseBigDecimal(getCellAny(row, hmap, List.of("Return premium (Incl. GST)", "Return premium (Incl. GST) of Return"), null));
+                    BigDecimal meeshoCommissionPercentage = parseBigDecimal(getCellAny(row, hmap, List.of("Meesho Commission Percentage"), null));
+                    BigDecimal meeshoCommission = parseBigDecimal(getCellAny(row, hmap, List.of("Meesho Commission (Incl. GST)"), null));
+                    BigDecimal meeshoGoldPlatformFee = parseBigDecimal(getCellAny(row, hmap, List.of("Meesho gold platform fee (Incl. GST)"), null));
+                    BigDecimal meeshoMallPlatformFee = parseBigDecimal(getCellAny(row, hmap, List.of("Meesho mall platform fee (Incl. GST)"), null));
+                    BigDecimal returnShippingCharge = parseBigDecimal(getCellAny(row, hmap, List.of("Return Shipping Charge (Incl. GST)"), null));
+                    BigDecimal gstCompensation = parseBigDecimal(getCellAny(row, hmap, List.of("GST Compensation (PRP Shipping)"), null));
+                    BigDecimal shippingCharge = parseBigDecimal(getCellAny(row, hmap, List.of("Shipping Charge (Incl. GST)"), null));
+                    BigDecimal otherSupportServiceCharges = parseBigDecimal(getCellAny(row, hmap, List.of("Other Support Service Charges (Excl. GST)"), null));
+                    BigDecimal waivers = parseBigDecimal(getCellAny(row, hmap, List.of("Waivers (Excl. GST)"), null));
+                    BigDecimal netOtherSupportServiceCharges = parseBigDecimal(getCellAny(row, hmap, List.of("Net Other Support Service Charges (Excl. GST)"), null));
+                    BigDecimal gstOnNetOtherSupportServiceCharges = parseBigDecimal(getCellAny(row, hmap, List.of("GST on Net Other Support Service Charges"), null));
+                    BigDecimal tcs = parseBigDecimal(getCellAny(row, hmap, List.of("TCS"), null));
+                    BigDecimal tdsRatePercentage = parseBigDecimal(getCellAny(row, hmap, List.of("TDS Rate %"), null));
+                    BigDecimal tds = parseBigDecimal(getCellAny(row, hmap, List.of("TDS"), null));
+                    BigDecimal compensation = parseBigDecimal(getCellAny(row, hmap, List.of("Compensation"), null));
+                    BigDecimal claims = parseBigDecimal(getCellAny(row, hmap, List.of("Claims"), null));
+                    BigDecimal recovery = parseBigDecimal(getCellAny(row, hmap, List.of("Recovery"), null));
+                    String compensationReason = clamp(getCellAny(row, hmap, List.of("Compensation Reason"), null), "compensation_reason");
+                    String claimsReason = clamp(getCellAny(row, hmap, List.of("Claims Reason"), null), "claims_reason");
+                    String recoveryReason = clamp(getCellAny(row, hmap, List.of("Recovery Reason"), null), "recovery_reason");
+                    LocalDate dispatchDate = parseToLocalDate(getCellAny(row, hmap, List.of("Dispatch Date"), null));
+                    BigDecimal productGstPercentage = parseBigDecimal(getCellAny(row, hmap, List.of("Product GST %"), null));
+                    BigDecimal listingPriceInclTaxes = parseBigDecimal(getCellAny(row, hmap, List.of("Listing Price (Incl. taxes)"), null));
+
+                    // Extract quantity from payment file
+                    String quantityStr = getCellAny(row, hmap, List.of("Quantity", "Qty", "Order Quantity"), null);
+                    Integer quantity = null;
+                    if (quantityStr != null && !quantityStr.isBlank()) {
+                        try {
+                            quantity = Integer.parseInt(quantityStr.trim());
+                        } catch (NumberFormatException e) {
+                            warn("Row " + r + " (" + orderId + "): Quantity '" + quantityStr + "' invalid; set to null");
+                        }
+                    }
+
+                    String skuForOrder = null;
+                    LocalDateTime orderDateTimeVal = null;
+                    try {
+                        var orderOpt = orderRepository.findByOrderId(orderId);
+                        if (orderOpt.isPresent()) {
+                            skuForOrder = clamp(orderOpt.get().getSku(), "sku");
+                            orderDateTimeVal = orderOpt.get().getOrderDateTime();
+                        }
+                    } catch (Exception ignored) {}
+                    if (skuForOrder == null) {
+                        String paymentSkuCandidate = clamp(getCellAny(row, hmap, List.of("SKU", "Supplier SKU", "Product SKU", "Supplier SKU Code"), null), "sku");
+                        if (paymentSkuCandidate != null && !paymentSkuCandidate.isBlank()) {
+                            skuForOrder = paymentSkuCandidate;
+                        }
+                    }
+                    if (orderDateTimeVal == null) {
+                        String orderDateStrAlt = getCellAny(row, hmap, List.of("Order Date", "OrderDate", "Order Created Date"), null);
+                        LocalDate orderDateAlt = parseToLocalDate(orderDateStrAlt);
+                        if (orderDateAlt != null) {
+                            orderDateTimeVal = orderDateAlt.atStartOfDay();
+                        } else if (dispatchDate != null) {
+                            orderDateTimeVal = dispatchDate.atStartOfDay();
+                        }
+                    }
+
+                    PaymentEntity entity = PaymentEntity.builder()
                             .paymentId(paymentId)
                             .orderId(orderId)
+                            .sku(skuForOrder)
+                            .quantity(quantity)
                             .amount(amount)
-                            .paymentDateTime(date.atStartOfDay())
+                            .finalSettlementAmount(finalSettlementAmount != null ? finalSettlementAmount : amount)
+                            .paymentDateTime(date != null ? date.atStartOfDay() : null)
+                            .orderDateTime(orderDateTimeVal)
                             .orderStatus(orderStatus)
                             .transactionId(transactionId)
-                            .finalSettlementAmount(finalSettlementAmount)
                             .priceType(priceType)
                             .totalSaleAmount(totalSaleAmount)
                             .totalSaleReturnAmount(totalSaleReturnAmount)
@@ -363,30 +400,32 @@ public class ExcelImportService {
                             .dispatchDate(dispatchDate)
                             .productGstPercentage(productGstPercentage)
                             .listingPriceInclTaxes(listingPriceInclTaxes)
-                            .build());
+                            .build();
+
+                    toSave.add(entity);
                 }
-                
+
                 log.info("Row processing summary: Total processed={}, Valid rows={}, Skipped rows={}, Entities to save={}", 
                         processedRows, validRows, skippedRows, toSave.size());
                 log.info("Total payment entities to process: {} (processed rows {} to {})", 
                         toSave.size(), firstDataRow, lastRowIndex);
-                
-                // Handle duplicates by using upsert logic based on order_id (Sub Order No)
+
                 int savedCount = 0;
                 for (PaymentEntity payment : toSave) {
                     try {
-                        // Check if payment already exists based on order_id (Sub Order No)
-                        var existingPayment = paymentRepository.findByOrderId(payment.getOrderId());
+                        var existingPayment = paymentRepository.findByOrderIdAndTransactionId(payment.getOrderId(), payment.getTransactionId());
                         if (existingPayment.isPresent()) {
                             log.info("Payment for order {} already exists, updating...", payment.getOrderId());
                             var existing = existingPayment.get();
-                            // Update all fields
                             existing.setPaymentId(payment.getPaymentId());
                             existing.setAmount(payment.getAmount());
-                            existing.setPaymentDateTime(payment.getPaymentDateTime());
-                            existing.setOrderStatus(payment.getOrderStatus());
-                            existing.setTransactionId(payment.getTransactionId());
                             existing.setFinalSettlementAmount(payment.getFinalSettlementAmount());
+                            existing.setPaymentDateTime(payment.getPaymentDateTime());
+                            existing.setOrderDateTime(payment.getOrderDateTime());
+                            existing.setOrderStatus(payment.getOrderStatus());
+                            existing.setSku(payment.getSku());
+                            existing.setQuantity(payment.getQuantity());
+                            existing.setTransactionId(payment.getTransactionId());
                             existing.setPriceType(payment.getPriceType());
                             existing.setTotalSaleAmount(payment.getTotalSaleAmount());
                             existing.setTotalSaleReturnAmount(payment.getTotalSaleReturnAmount());
@@ -419,7 +458,6 @@ public class ExcelImportService {
                             paymentRepository.save(existing);
                             savedCount++;
                         } else {
-                            // New payment, save it
                             paymentRepository.save(payment);
                             savedCount++;
                         }
@@ -428,8 +466,14 @@ public class ExcelImportService {
                         throw e;
                     }
                 }
-                
+
                 log.info("Successfully processed {} payment entities", savedCount);
+                // Trigger merged table rebuild after payments upload
+                try {
+                    dataMergeService.rebuildMergedTable();
+                } catch (Exception e) {
+                    log.warn("Failed to rebuild merged_orders after payments upload: {}", e.getMessage());
+                }
                 return savedCount;
             }
         }
@@ -457,7 +501,6 @@ public class ExcelImportService {
                             .build());
                 }
             }
-            // upsert simple: delete all and insert (simple baseline)
             skuPriceRepository.deleteAllInBatch();
             skuPriceRepository.saveAll(toSave);
             return toSave.size();
@@ -492,7 +535,6 @@ public class ExcelImportService {
                 BigDecimal price = new BigDecimal(cleanNumeric(priceStr));
                 LocalDate date = parseToLocalDate(getAny(r, headerMap, List.of("order date", "date", "orderdate"), 4));
                 
-                // Get additional fields
                 String productName = getAny(r, headerMap, List.of("product name", "product"), 5);
                 String customerState = getAny(r, headerMap, List.of("customer state", "state"), 6);
                 String size = getAny(r, headerMap, List.of("size"), 7);
@@ -502,6 +544,9 @@ public class ExcelImportService {
                 BigDecimal supplierDiscountedPrice = parseBigDecimal(supplierDiscountedPriceStr);
                 String packetId = getAny(r, headerMap, List.of("packet id", "packet id"), 10);
                 String reasonForCreditEntry = getAny(r, headerMap, List.of("reason for credit entry", "credit entry reason"), 11);
+                if (reasonForCreditEntry != null) {
+                    reasonForCreditEntry = reasonForCreditEntry.toUpperCase();
+                }
                 
                 toSave.add(OrderEntity.builder()
                         .orderId(orderId)
@@ -522,16 +567,13 @@ public class ExcelImportService {
         
         log.info("Total CSV order entities to process: {}", toSave.size());
         
-        // Handle duplicates by using upsert logic
         int savedCount = 0;
         for (OrderEntity order : toSave) {
             try {
-                // Check if order already exists
                 var existingOrder = orderRepository.findByOrderId(order.getOrderId());
                 if (existingOrder.isPresent()) {
                     log.info("CSV Order {} already exists, updating...", order.getOrderId());
                     var existing = existingOrder.get();
-                    // Update all fields
                     existing.setSku(order.getSku());
                     existing.setQuantity(order.getQuantity());
                     existing.setSellingPrice(order.getSellingPrice());
@@ -546,7 +588,6 @@ public class ExcelImportService {
                     orderRepository.save(existing);
                     savedCount++;
                 } else {
-                    // New order, save it
                     orderRepository.save(order);
                     savedCount++;
                 }
@@ -566,49 +607,174 @@ public class ExcelImportService {
              CSVParser parser = CSVFormat.DEFAULT.withFirstRecordAsHeader().parse(reader)) {
             var headerMap = parser.getHeaderMap();
             for (CSVRecord r : parser) {
-                String paymentId = getAny(r, headerMap, List.of("payment id", "paymentId", "transaction id"), 0);
-                String orderId = getAny(r, headerMap, List.of("order id", "orderId", "sub order no", "sub order number"), 1);
+                String paymentId = clamp(getAny(r, headerMap, List.of("payment id", "paymentId", "transaction id"), 0), "payment_id");
+                String orderId = clamp(getAny(r, headerMap, List.of("order id", "orderId", "sub order no", "sub order number"), 1), "order_id");
                 String amtStr = getAny(r, headerMap, List.of("final settlement amount", "net settlement amount", "amount"), 2);
-                BigDecimal amount = new BigDecimal(cleanNumeric(amtStr));
+                BigDecimal amount;
+                try { amount = new BigDecimal(cleanNumeric(amtStr)); } catch (Exception ex) { amount = BigDecimal.ZERO; warn("CSV: orderId=" + orderId + ": Amount '" + amtStr + "' invalid; set to 0"); }
                 LocalDate date = parseToLocalDate(getAny(r, headerMap, List.of("payment date", "settlement date", "date"), 3));
-                String orderStatus = getAny(r, headerMap, List.of("live order status", "order status", "status"), 4);
-                
-                // Validate that order status is not null or blank
-                if (orderStatus == null || orderStatus.isBlank()) {
-                    log.warn("CSV row: Skipping row with null/blank order status for order {}", orderId);
-                    continue;
+                if (date == null) { date = LocalDate.now(); warn("CSV: orderId=" + orderId + ": Payment date missing/invalid; set to today"); }
+                String orderStatus = clamp(getAny(r, headerMap, List.of("live order status", "order status", "status"), 4), "order_status");
+                if (orderStatus == null || orderStatus.isBlank()) { orderStatus = "UNKNOWN"; warn("CSV: orderId=" + orderId + ": Missing order status; set to UNKNOWN"); }
+                if (orderStatus != null && !orderStatus.equals("UNKNOWN")) {
+                    orderStatus = orderStatus.toUpperCase();
                 }
+
+                // Extract quantity from CSV payment file
+                String quantityStr = getAny(r, headerMap, List.of("quantity", "qty", "order quantity"), null);
+                Integer quantity = null;
+                if (quantityStr != null && !quantityStr.isBlank()) {
+                    try {
+                        quantity = Integer.parseInt(quantityStr.trim());
+                    } catch (NumberFormatException e) {
+                        warn("CSV: orderId=" + orderId + ": Quantity '" + quantityStr + "' invalid; set to null");
+                    }
+                }
+
+                String transactionId = clamp(getAny(r, headerMap, List.of("transaction id", "transaction"), null), "transaction_id");
+                if (transactionId == null || transactionId.isBlank()) { transactionId = paymentId; warn("CSV: orderId=" + orderId + ": Missing transaction id; using payment id as fallback"); }
+
+                BigDecimal finalSettlementAmount = null;
+                try { finalSettlementAmount = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("final settlement amount", "net settlement amount"), null))); } catch (Exception ignored) {}
+                String priceType = clamp(getAny(r, headerMap, List.of("price type"), null), "price_type");
+                BigDecimal totalSaleAmount = null; try { totalSaleAmount = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("total sale amount (incl. shipping & gst)"), null))); } catch (Exception ignored) {}
+                BigDecimal totalSaleReturnAmount = null; try { totalSaleReturnAmount = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("total sale return amount (incl. shipping & gst)"), null))); } catch (Exception ignored) {}
+                BigDecimal fixedFee = null; try { fixedFee = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("fixed fee (incl. gst)"), null))); } catch (Exception ignored) {}
+                BigDecimal warehousingFee = null; try { warehousingFee = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("warehousing fee (incl. gst)"), null))); } catch (Exception ignored) {}
+                BigDecimal returnPremium = null; try { returnPremium = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("return premium (incl. gst)"), null))); } catch (Exception ignored) {}
+                BigDecimal meeshoCommissionPercentage = null; try { meeshoCommissionPercentage = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("meesho commission percentage"), null))); } catch (Exception ignored) {}
+                BigDecimal meeshoCommission = null; try { meeshoCommission = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("meesho commission (incl. gst)"), null))); } catch (Exception ignored) {}
+                BigDecimal returnShippingCharge = null; try { returnShippingCharge = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("return shipping charge (incl. gst)"), null))); } catch (Exception ignored) {}
+                BigDecimal gstCompensation = null; try { gstCompensation = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("gst compensation (prp shipping)"), null))); } catch (Exception ignored) {}
+                BigDecimal shippingCharge = null; try { shippingCharge = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("shipping charge (incl. gst)"), null))); } catch (Exception ignored) {}
+                BigDecimal otherSupportServiceCharges = null; try { otherSupportServiceCharges = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("other support service charges (excl. gst)"), null))); } catch (Exception ignored) {}
+                BigDecimal waivers = null; try { waivers = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("waivers (excl. gst)"), null))); } catch (Exception ignored) {}
+                BigDecimal netOtherSupportServiceCharges = null; try { netOtherSupportServiceCharges = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("net other support service charges (excl. gst)"), null))); } catch (Exception ignored) {}
+                BigDecimal gstOnNetOtherSupportServiceCharges = null; try { gstOnNetOtherSupportServiceCharges = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("gst on net other support service charges"), null))); } catch (Exception ignored) {}
+                BigDecimal tcs = null; try { tcs = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("tcs"), null))); } catch (Exception ignored) {}
+                BigDecimal tdsRatePercentage = null; try { tdsRatePercentage = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("tds rate %"), null))); } catch (Exception ignored) {}
+                BigDecimal tds = null; try { tds = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("tds"), null))); } catch (Exception ignored) {}
+                BigDecimal compensation = null; try { compensation = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("compensation"), null))); } catch (Exception ignored) {}
+                BigDecimal claims = null; try { claims = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("claims"), null))); } catch (Exception ignored) {}
+                BigDecimal recovery = null; try { recovery = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("recovery"), null))); } catch (Exception ignored) {}
+                String compensationReason = clamp(getAny(r, headerMap, List.of("compensation reason"), null), "compensation_reason");
+                String claimsReason = clamp(getAny(r, headerMap, List.of("claims reason"), null), "claims_reason");
+                String recoveryReason = clamp(getAny(r, headerMap, List.of("recovery reason"), null), "recovery_reason");
+                LocalDate dispatchDate = parseToLocalDate(getAny(r, headerMap, List.of("dispatch date"), null));
+                BigDecimal productGstPercentage = null; try { productGstPercentage = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("product gst %"), null))); } catch (Exception ignored) {}
+                BigDecimal listingPriceInclTaxes = null; try { listingPriceInclTaxes = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("listing price (incl. taxes)"), null))); } catch (Exception ignored) {}
                 
+                String skuForOrder = null;
+                LocalDateTime orderDateTimeVal = null;
+                try {
+                    var orderOpt = orderRepository.findByOrderId(orderId);
+                    if (orderOpt.isPresent()) {
+                        skuForOrder = clamp(orderOpt.get().getSku(), "sku");
+                        orderDateTimeVal = orderOpt.get().getOrderDateTime();
+                    }
+                } catch (Exception ignored) {}
+                if (skuForOrder == null) {
+                    String paymentSkuCandidate = clamp(getAny(r, headerMap, List.of("sku", "supplier sku", "product sku", "supplier sku code"), null), "sku");
+                    if (paymentSkuCandidate != null && !paymentSkuCandidate.isBlank()) {
+                        skuForOrder = paymentSkuCandidate;
+                    }
+                }
+                if (orderDateTimeVal == null) {
+                    LocalDate orderDateAlt = parseToLocalDate(getAny(r, headerMap, List.of("order date", "orderdate", "order created date"), null));
+                    if (orderDateAlt != null) {
+                        orderDateTimeVal = orderDateAlt.atStartOfDay();
+                    }
+                }
+ 
                 toSave.add(PaymentEntity.builder()
                         .paymentId(paymentId)
                         .orderId(orderId)
+                        .sku(skuForOrder)
+                        .quantity(quantity)
                         .amount(amount)
-                        .paymentDateTime(date.atStartOfDay())
+                        .finalSettlementAmount(finalSettlementAmount != null ? finalSettlementAmount : amount)
+                        .paymentDateTime(date != null ? date.atStartOfDay() : null)
+                        .orderDateTime(orderDateTimeVal)
                         .orderStatus(orderStatus)
+                        .transactionId(transactionId)
+                        .priceType(priceType)
+                        .totalSaleAmount(totalSaleAmount)
+                        .totalSaleReturnAmount(totalSaleReturnAmount)
+                        .fixedFee(fixedFee)
+                        .warehousingFee(warehousingFee)
+                        .returnPremium(returnPremium)
+                        .meeshoCommissionPercentage(meeshoCommissionPercentage)
+                        .meeshoCommission(meeshoCommission)
+                        .returnShippingCharge(returnShippingCharge)
+                        .gstCompensation(gstCompensation)
+                        .shippingCharge(shippingCharge)
+                        .otherSupportServiceCharges(otherSupportServiceCharges)
+                        .waivers(waivers)
+                        .netOtherSupportServiceCharges(netOtherSupportServiceCharges)
+                        .gstOnNetOtherSupportServiceCharges(gstOnNetOtherSupportServiceCharges)
+                        .tcs(tcs)
+                        .tdsRatePercentage(tdsRatePercentage)
+                        .tds(tds)
+                        .compensation(compensation)
+                        .claims(claims)
+                        .recovery(recovery)
+                        .compensationReason(compensationReason)
+                        .claimsReason(claimsReason)
+                        .recoveryReason(recoveryReason)
+                        .dispatchDate(dispatchDate)
+                        .productGstPercentage(productGstPercentage)
+                        .listingPriceInclTaxes(listingPriceInclTaxes)
                         .build());
             }
         }
         
         log.info("Total CSV payment entities to process: {}", toSave.size());
         
-        // Handle duplicates by using upsert logic based on order_id (Sub Order No)
         int savedCount = 0;
         for (PaymentEntity payment : toSave) {
             try {
-                // Check if payment already exists based on order_id (Sub Order No)
-                var existingPayment = paymentRepository.findByOrderId(payment.getOrderId());
+                var existingPayment = paymentRepository.findByOrderIdAndTransactionId(payment.getOrderId(), payment.getTransactionId());
                 if (existingPayment.isPresent()) {
                     log.info("CSV Payment for order {} already exists, updating...", payment.getOrderId());
                     var existing = existingPayment.get();
-                    // Update all fields
                     existing.setPaymentId(payment.getPaymentId());
                     existing.setAmount(payment.getAmount());
+                    existing.setFinalSettlementAmount(payment.getFinalSettlementAmount());
                     existing.setPaymentDateTime(payment.getPaymentDateTime());
+                    existing.setOrderDateTime(payment.getOrderDateTime());
                     existing.setOrderStatus(payment.getOrderStatus());
+                    existing.setSku(payment.getSku());
+                    existing.setTransactionId(payment.getTransactionId());
+                    existing.setPriceType(payment.getPriceType());
+                    existing.setTotalSaleAmount(payment.getTotalSaleAmount());
+                    existing.setTotalSaleReturnAmount(payment.getTotalSaleReturnAmount());
+                    existing.setFixedFee(payment.getFixedFee());
+                    existing.setWarehousingFee(payment.getWarehousingFee());
+                    existing.setReturnPremium(payment.getReturnPremium());
+                    existing.setMeeshoCommissionPercentage(payment.getMeeshoCommissionPercentage());
+                    existing.setMeeshoCommission(payment.getMeeshoCommission());
+                    existing.setReturnShippingCharge(payment.getReturnShippingCharge());
+                    existing.setGstCompensation(payment.getGstCompensation());
+                    existing.setShippingCharge(payment.getShippingCharge());
+                    existing.setOtherSupportServiceCharges(payment.getOtherSupportServiceCharges());
+                    existing.setWaivers(payment.getWaivers());
+                    existing.setNetOtherSupportServiceCharges(payment.getNetOtherSupportServiceCharges());
+                    existing.setGstOnNetOtherSupportServiceCharges(payment.getGstOnNetOtherSupportServiceCharges());
+                    existing.setTcs(payment.getTcs());
+                    existing.setTdsRatePercentage(payment.getTdsRatePercentage());
+                    existing.setTds(payment.getTds());
+                    existing.setCompensation(payment.getCompensation());
+                    existing.setClaims(payment.getClaims());
+                    existing.setRecovery(payment.getRecovery());
+                    existing.setCompensationReason(payment.getCompensationReason());
+                    existing.setClaimsReason(payment.getClaimsReason());
+                    existing.setRecoveryReason(payment.getRecoveryReason());
+                    existing.setDispatchDate(payment.getDispatchDate());
+                    existing.setProductGstPercentage(payment.getProductGstPercentage());
+                    existing.setListingPriceInclTaxes(payment.getListingPriceInclTaxes());
                     paymentRepository.save(existing);
                     savedCount++;
                 } else {
-                    // New payment, save it
                     paymentRepository.save(payment);
                     savedCount++;
                 }
@@ -627,11 +793,14 @@ public class ExcelImportService {
              CSVParser parser = CSVFormat.DEFAULT.withFirstRecordAsHeader().parse(reader)) {
             var headerMap = parser.getHeaderMap();
             for (CSVRecord r : parser) {
-                String sku = getAny(r, headerMap, List.of("sku", "purchasePrice"), 0);
-                String purchasePrice = getAny(r, headerMap, List.of("purchasePrice", "purchase price"), 1);
+                String sku = getAny(r, headerMap, List.of("sku", "SKU", "Sku"), 0);
+                if (sku == null || sku.isBlank()) continue;
+                String priceStr = getAny(r, headerMap, List.of("purchasePrice", "purchase price", "price"), 1);
+                BigDecimal purchasePrice = parseBigDecimal(priceStr);
+                if (purchasePrice == null) purchasePrice = BigDecimal.ZERO;
                 toSave.add(SkuPriceEntity.builder()
-                        .sku(sku)
-                        .purchasePrice(new BigDecimal(cleanNumeric(purchasePrice)))
+                        .sku(sku.trim())
+                        .purchasePrice(purchasePrice)
                         .updatedAt(LocalDateTime.now())
                         .build());
             }
@@ -672,29 +841,17 @@ public class ExcelImportService {
 
     public BigDecimal parseBigDecimal(String value) {
         if (value == null || value.isBlank()) return null;
-        try {
-            return new BigDecimal(cleanNumeric(value));
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        try { return new BigDecimal(cleanNumeric(value)); } catch (NumberFormatException e) { return null; }
     }
 
     public LocalDate parseToLocalDate(String value) {
         if (value == null || value.isBlank()) return null;
-        try {
-            return LocalDate.parse(value.trim());
-        } catch (Exception e) {
-            return null;
-        }
+        try { return LocalDate.parse(value.trim()); } catch (Exception e) { return null; }
     }
 
     public int parseIntFlexible(String value) {
         if (value == null || value.isBlank()) return 0;
-        try {
-            return (int) Double.parseDouble(cleanNumeric(value));
-        } catch (NumberFormatException e) {
-            return 0;
-        }
+        try { return (int) Double.parseDouble(cleanNumeric(value)); } catch (NumberFormatException e) { return 0; }
     }
 
     public String cleanNumeric(String value) {
@@ -711,7 +868,6 @@ public class ExcelImportService {
             String joined = new StringBuilder()
                     .append(getCellAsString(row, row.getFirstCellNum() >= 0 ? row.getFirstCellNum() : 0))
                     .toString();
-            // Basic scan across row
             boolean found = false;
             for (int c = row.getFirstCellNum(); c < row.getLastCellNum(); c++) {
                 String cell = getCellAsString(row, c);
@@ -719,7 +875,6 @@ public class ExcelImportService {
             }
             String norm = normalizeHeader(joined);
             log.debug("Row {}: normalized content: '{}'", r, norm);
-            // A row is header-like if it contains at least one token from EACH token group
             found = true;
             for (List<String> group : tokenGroups) {
                 boolean anyInGroup = false;
@@ -754,16 +909,12 @@ public class ExcelImportService {
     private Map<String,Integer> buildHeaderIndex(Row header) {
         Map<String,Integer> map = new java.util.HashMap<>();
         log.debug("Building header index for row: {}", header.getRowNum());
-        
-        // More robust column scanning - scan a wider range for complex Excel files
-        int maxCols = 100; // Increased from 50 to handle files with many columns
+        int maxCols = 100;
         for (int i = 0; i < maxCols; i++) {
             var cell = header.getCell(i);
             if (cell == null) continue;
-            
             String cellValue = cell.getStringCellValue();
             if (cellValue == null || cellValue.trim().isEmpty()) continue;
-            
             String name = normalizeHeader(cellValue);
             log.debug("Column {}: '{}' -> '{}'", i, cellValue, name);
             map.put(name, i);
@@ -774,8 +925,6 @@ public class ExcelImportService {
 
     private String getCellAny(Row row, Map<String,Integer> hmap, List<String> names, Integer fallbackIdx) {
         log.debug("getCellAny: looking for names: {}, fallback: {}", names, fallbackIdx);
-        
-        // First try to resolve by header names
         for (String n : names) {
             Integer idx = resolveHeaderIndex(hmap, n);
             log.debug("getCellAny: name '{}' resolved to index: {}", n, idx);
@@ -788,51 +937,39 @@ public class ExcelImportService {
                 }
             }
         }
-        
-        // If header resolution failed, try fallback index
         if (fallbackIdx != null) {
             String v = getCellAsString(row, fallbackIdx);
             log.debug("getCellAny: fallback cell at index {} = '{}'", fallbackIdx, v);
             if (v != null && !v.isBlank()) return v.trim();
         }
-        
-        // Last resort: try common column positions based on typical Excel layouts
         if (names.contains("Sub Order No") || names.contains("Order Id")) {
-            // Try column 1 (B) for order ID
             String v = getCellAsString(row, 1);
             if (v != null && !v.isBlank()) {
                 log.debug("getCellAny: using fallback column 1 for order ID: '{}'", v);
                 return v.trim();
             }
         }
-        
         if (names.contains("Transaction ID") || names.contains("Payment Id")) {
-            // Try column 9 (J) for transaction ID
             String v = getCellAsString(row, 9);
             if (v != null && !v.isBlank()) {
                 log.debug("getCellAny: using fallback column 9 for transaction ID: '{}'", v);
                 return v.trim();
             }
         }
-        
         if (names.contains("Final Settlement Amount") || names.contains("Amount")) {
-            // Try column 12 (L) for amount
             String v = getCellAsString(row, 12);
             if (v != null && !v.isBlank()) {
                 log.debug("getCellAny: using fallback column 12 for amount: '{}'", v);
                 return v.trim();
             }
         }
-        
         if (names.contains("Payment Date") || names.contains("Date")) {
-            // Try column 10 (K) for date
             String v = getCellAsString(row, 10);
             if (v != null && !v.isBlank()) {
                 log.debug("getCellAny: using fallback column 10 for date: '{}'", v);
                 return v.trim();
             }
         }
-        
         log.debug("getCellAny: no value found for names: {}", names);
         return "";
     }
@@ -842,11 +979,9 @@ public class ExcelImportService {
         log.debug("resolveHeaderIndex: looking for '{}' (normalized: '{}')", candidate, target);
         Integer exact = hmap.get(target);
         if (exact != null) return exact;
-        // fuzzy contains match
         for (Map.Entry<String,Integer> e : hmap.entrySet()) {
             String k = e.getKey();
             if (k.contains(target) || target.contains(k)) return e.getValue();
-            // tokenized contains: all words in target exist in k
             String[] parts = target.split(" ");
             boolean all = true;
             for (String p : parts) { if (!p.isBlank() && !k.contains(p)) { all = false; break; } }

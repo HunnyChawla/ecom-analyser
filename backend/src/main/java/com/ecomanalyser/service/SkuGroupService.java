@@ -4,11 +4,13 @@ import com.ecomanalyser.domain.SkuGroupEntity;
 import com.ecomanalyser.domain.SkuGroupMappingEntity;
 import com.ecomanalyser.domain.OrderEntity;
 import com.ecomanalyser.domain.PaymentEntity;
+import com.ecomanalyser.domain.MergedOrderPaymentEntity;
 import com.ecomanalyser.repository.SkuGroupRepository;
 import com.ecomanalyser.repository.SkuGroupMappingRepository;
 import com.ecomanalyser.repository.OrderRepository;
 import com.ecomanalyser.repository.PaymentRepository;
 import com.ecomanalyser.repository.SkuPriceRepository;
+import com.ecomanalyser.repository.MergedOrderPaymentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -32,6 +34,7 @@ public class SkuGroupService {
     private final OrderRepository orderRepository;
     private final PaymentRepository paymentRepository;
     private final SkuPriceRepository skuPriceRepository;
+    private final MergedOrderPaymentRepository mergedOrderRepository;
     
     /**
      * Import SKU groups from Excel template
@@ -128,37 +131,38 @@ public class SkuGroupService {
     
     /**
      * Get group analytics - top performing groups by orders
+     * Uses merged_orders table for accurate revenue and profit calculations
      */
     public List<Map<String, Object>> getTopPerformingGroupsByOrders(LocalDate start, LocalDate end) {
-        LocalDateTime startDateTime = start.atStartOfDay();
-        LocalDateTime endDateTime = end.plusDays(1).atStartOfDay().minusNanos(1);
-        
-        var orders = orderRepository.findByOrderDateTimeBetween(startDateTime, endDateTime);
+        // Use merged_orders table for accurate data
+        var mergedOrders = mergedOrderRepository.findByOrderDateBetween(start, end);
         
         // Group orders by SKU group
         Map<String, GroupAnalytics> groupAnalytics = new HashMap<>();
         
-        for (OrderEntity order : orders) {
-            String groupName = skuGroupMappingRepository.findGroupNameBySku(order.getSku())
+        for (MergedOrderPaymentEntity merged : mergedOrders) {
+            if (merged.getSkuId() == null || merged.getSettlementAmount() == null || 
+                merged.getSettlementAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                continue; // Skip invalid records
+            }
+            
+            String groupName = skuGroupMappingRepository.findGroupNameBySku(merged.getSkuId())
                     .orElse("Ungrouped SKUs");
             
             GroupAnalytics analytics = groupAnalytics.computeIfAbsent(groupName, 
                 k -> new GroupAnalytics(k, BigDecimal.ZERO, 0L, BigDecimal.ZERO));
             
             analytics.orderCount++;
-            analytics.totalQuantity += order.getQuantity();
-            analytics.totalRevenue = analytics.totalRevenue.add(
-                order.getSellingPrice().multiply(BigDecimal.valueOf(order.getQuantity())));
+            analytics.totalQuantity += merged.getQuantity() != null ? merged.getQuantity() : 0;
+            // Use actual settlement amount (real revenue) instead of listed price
+            analytics.totalRevenue = analytics.totalRevenue.add(merged.getSettlementAmount());
         }
         
-        // Calculate profit for each group
+        // Calculate profit for each group using accurate cost calculation
         for (GroupAnalytics analytics : groupAnalytics.values()) {
             if (!"Ungrouped SKUs".equals(analytics.groupName)) {
-                BigDecimal totalCost = BigDecimal.valueOf(analytics.totalQuantity).multiply(getPurchasePriceForSku(
-                    skuGroupMappingRepository.findSkusByGroupId(
-                        skuGroupRepository.findByGroupName(analytics.groupName).get().getId()
-                    ).get(0) // Get first SKU from group for price
-                ));
+                // Calculate total cost using weighted average of purchase prices
+                BigDecimal totalCost = calculateGroupTotalCost(analytics.groupName, analytics.totalQuantity);
                 analytics.totalProfit = analytics.totalRevenue.subtract(totalCost);
             }
         }
@@ -173,21 +177,26 @@ public class SkuGroupService {
     
     /**
      * Get revenue contribution by group
+     * Uses merged_orders table for accurate revenue calculations
      */
     public List<Map<String, Object>> getRevenueContributionByGroup(LocalDate start, LocalDate end) {
-        LocalDateTime startDateTime = start.atStartOfDay();
-        LocalDateTime endDateTime = end.plusDays(1).atStartOfDay().minusNanos(1);
-        
-        var orders = orderRepository.findByOrderDateTimeBetween(startDateTime, endDateTime);
+        // Use merged_orders table for accurate data
+        var mergedOrders = mergedOrderRepository.findByOrderDateBetween(start, end);
         
         // Group orders by SKU group
         Map<String, BigDecimal> groupRevenue = new HashMap<>();
         
-        for (OrderEntity order : orders) {
-            String groupName = skuGroupMappingRepository.findGroupNameBySku(order.getSku())
+        for (MergedOrderPaymentEntity merged : mergedOrders) {
+            if (merged.getSkuId() == null || merged.getSettlementAmount() == null || 
+                merged.getSettlementAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                continue; // Skip invalid records
+            }
+            
+            String groupName = skuGroupMappingRepository.findGroupNameBySku(merged.getSkuId())
                     .orElse("Ungrouped SKUs");
             
-            BigDecimal revenue = order.getSellingPrice().multiply(BigDecimal.valueOf(order.getQuantity()));
+            // Use actual settlement amount (real revenue) instead of listed price
+            BigDecimal revenue = merged.getSettlementAmount();
             groupRevenue.merge(groupName, revenue, BigDecimal::add);
         }
         
@@ -205,36 +214,38 @@ public class SkuGroupService {
     
     /**
      * Get profit comparison across groups
+     * Uses merged_orders table for accurate revenue and profit calculations
      */
     public List<Map<String, Object>> getProfitComparisonByGroup(LocalDate start, LocalDate end) {
-        LocalDateTime startDateTime = start.atStartOfDay();
-        LocalDateTime endDateTime = end.plusDays(1).atStartOfDay().minusNanos(1);
-        
-        var orders = orderRepository.findByOrderDateTimeBetween(startDateTime, endDateTime);
+        // Use merged_orders table for accurate data
+        var mergedOrders = mergedOrderRepository.findByOrderDateBetween(start, end);
         
         // Group orders by SKU group
         Map<String, GroupAnalytics> groupAnalytics = new HashMap<>();
         
-        for (OrderEntity order : orders) {
-            String groupName = skuGroupMappingRepository.findGroupNameBySku(order.getSku())
+        for (MergedOrderPaymentEntity merged : mergedOrders) {
+            if (merged.getSkuId() == null || merged.getSettlementAmount() == null || 
+                merged.getSettlementAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                continue; // Skip invalid records
+            }
+            
+            String groupName = skuGroupMappingRepository.findGroupNameBySku(merged.getSkuId())
                     .orElse("Ungrouped SKUs");
             
             GroupAnalytics analytics = groupAnalytics.computeIfAbsent(groupName, 
                 k -> new GroupAnalytics(k, BigDecimal.ZERO, 0L, BigDecimal.ZERO));
             
-            analytics.totalQuantity += order.getQuantity();
-            analytics.totalRevenue = analytics.totalRevenue.add(
-                order.getSellingPrice().multiply(BigDecimal.valueOf(order.getQuantity())));
+            analytics.orderCount++;
+            analytics.totalQuantity += merged.getQuantity() != null ? merged.getQuantity() : 0;
+            // Use actual settlement amount (real revenue) instead of listed price
+            analytics.totalRevenue = analytics.totalRevenue.add(merged.getSettlementAmount());
         }
         
-        // Calculate profit for each group
+        // Calculate profit for each group using accurate cost calculation
         for (GroupAnalytics analytics : groupAnalytics.values()) {
             if (!"Ungrouped SKUs".equals(analytics.groupName)) {
-                BigDecimal totalCost = BigDecimal.valueOf(analytics.totalQuantity).multiply(getPurchasePriceForSku(
-                    skuGroupMappingRepository.findSkusByGroupId(
-                        skuGroupRepository.findByGroupName(analytics.groupName).get().getId()
-                    ).get(0) // Get first SKU from group for price
-                ));
+                // Calculate total cost using weighted average of purchase prices
+                BigDecimal totalCost = calculateGroupTotalCost(analytics.groupName, analytics.totalQuantity);
                 analytics.totalProfit = analytics.totalRevenue.subtract(totalCost);
             }
         }
@@ -277,6 +288,22 @@ public class SkuGroupService {
         return cell != null ? cell.toString() : null;
     }
     
+    /**
+     * Calculate total cost for a group using weighted average of purchase prices
+     */
+    private BigDecimal calculateGroupTotalCost(String groupName, long totalQuantity) {
+        try {
+            Optional<SkuGroupEntity> group = skuGroupRepository.findByGroupName(groupName);
+            if (group.isPresent() && group.get().getPurchasePrice() != null) {
+                return group.get().getPurchasePrice().multiply(BigDecimal.valueOf(totalQuantity));
+            }
+            return BigDecimal.ZERO;
+        } catch (Exception e) {
+            log.warn("Error calculating cost for group {}: {}", groupName, e.getMessage());
+            return BigDecimal.ZERO;
+        }
+    }
+    
     private Map<String, Object> convertToMap(GroupAnalytics analytics) {
         Map<String, Object> map = new HashMap<>();
         map.put("groupName", analytics.groupName);
@@ -285,6 +312,34 @@ public class SkuGroupService {
         map.put("totalRevenue", analytics.totalRevenue);
         map.put("totalProfit", analytics.totalProfit);
         return map;
+    }
+    
+    /**
+     * Build rows for the SKU group template including all grouped and ungrouped SKUs
+     * Row format: [groupName, sku, purchasePrice, description]
+     */
+    public List<String[]> buildSkuGroupTemplateRows() {
+        List<String[]> rows = new ArrayList<>();
+        // Existing groups with their SKUs
+        var groups = skuGroupRepository.findAll();
+        for (SkuGroupEntity group : groups) {
+            var skus = skuGroupMappingRepository.findSkusByGroupId(group.getId());
+            for (String sku : skus) {
+                rows.add(new String[] {
+                        group.getGroupName(),
+                        sku,
+                        group.getPurchasePrice() != null ? group.getPurchasePrice().toPlainString() : "",
+                        group.getDescription() != null ? group.getDescription() : ""
+                });
+            }
+        }
+        
+        // Ungrouped SKUs (leave group and price empty so users can fill in)
+        var ungrouped = getUngroupedSkus();
+        for (String sku : ungrouped) {
+            rows.add(new String[] { "", sku, "", "" });
+        }
+        return rows;
     }
     
     // Inner class for analytics data

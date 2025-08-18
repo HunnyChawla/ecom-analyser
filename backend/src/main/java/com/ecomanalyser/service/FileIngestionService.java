@@ -73,10 +73,19 @@ public class FileIngestionService {
         List<String> errors = new ArrayList<>();
         
         try (Reader reader = new InputStreamReader(file.getInputStream());
-             CSVParser parser = CSVFormat.DEFAULT.withFirstRecordAsHeader().parse(reader)) {
+             CSVParser parser = CSVFormat.DEFAULT
+                 .withFirstRecordAsHeader()
+                 .withIgnoreHeaderCase()
+                 .withTrim()
+                 .withIgnoreEmptyLines()
+                 .withEscape('\\')
+                 .withQuote('"')
+                 .parse(reader)) {
             
             // Validate schema
             Set<String> actualColumns = parser.getHeaderMap().keySet();
+            log.info("CSV headers detected: {}", actualColumns);
+            
             SchemaValidationResult validationResult = schemaValidationService.validateSchema(actualColumns, fileType);
             
             warnings.addAll(validationResult.getWarnings());
@@ -89,6 +98,40 @@ public class FileIngestionService {
             
             // Process rows
             List<CSVRecord> records = parser.getRecords();
+            log.info("Found {} CSV records to process", records.size());
+            
+            // Validate that we have records
+            if (records.isEmpty()) {
+                warnings.add("No data rows found in CSV file");
+                return createSuccessResponse(batchId, 0, 0, warnings, errors, file, fileType);
+            }
+            
+            // Log first few records for debugging
+            for (int i = 0; i < Math.min(3, records.size()); i++) {
+                CSVRecord record = records.get(i);
+                log.debug("Sample record {}: size={}, values={}", i + 1, record.size(), 
+                         Arrays.toString(record.values()));
+                
+                // Also log the raw record for debugging
+                log.debug("Sample record {} raw: {}", i + 1, record);
+                
+                // Test the conversion methods
+                String testDirect = convertCsvRecordToStringDirect(record);
+                String testAlternative = convertCsvRecordToStringAlternative(record);
+                String testRobust = convertCsvRecordToStringRobust(record);
+                
+                log.debug("Sample record {} conversion test - Direct: '{}', Alternative: '{}', Robust: '{}'", 
+                         i + 1, testDirect, testAlternative, testRobust);
+                
+                // Validate that none of the methods return object references
+                if (testDirect.contains("CSVRecord") || testAlternative.contains("CSVRecord") || testRobust.contains("CSVRecord")) {
+                    log.error("CRITICAL: One or more conversion methods returned object references!");
+                    log.error("Direct: '{}'", testDirect);
+                    log.error("Alternative: '{}'", testAlternative);
+                    log.error("Robust: '{}'", testRobust);
+                }
+            }
+            
             return processRows(fileType, batchId, records, warnings, errors, file);
         }
     }
@@ -293,9 +336,54 @@ public class FileIngestionService {
         int acceptedRows = 0;
         int rejectedRows = 0;
         
+        log.info("Processing {} CSV records for batch {}", records.size(), batchId);
+        
         for (int i = 0; i < records.size(); i++) {
             CSVRecord record = records.get(i);
-            String rawData = record.toString();
+            
+            // Test CSVRecord behavior for the first few records
+            if (i < 2) {
+                testCsvRecordBehavior(record);
+            }
+            
+            // Debug logging to see the CSVRecord object
+            log.debug("Processing CSVRecord {}: {}", i + 1, record);
+            log.debug("CSVRecord class: {}", record.getClass().getName());
+            log.debug("CSVRecord size: {}", record.size());
+            log.debug("CSVRecord recordNumber: {}", record.getRecordNumber());
+            
+            // Test different ways to access the data
+            try {
+                String[] directValues = record.values();
+                log.debug("Direct values array: {}", Arrays.toString(directValues));
+                
+                // Try to access individual fields
+                for (int j = 0; j < Math.min(5, record.size()); j++) {
+                    try {
+                        String fieldValue = record.get(j);
+                        log.debug("Field {}: '{}'", j, fieldValue);
+                    } catch (Exception e) {
+                        log.error("Error accessing field {}: {}", j, e.getMessage());
+                    }
+                }
+            } catch (Exception e) {
+                log.error("Error accessing CSVRecord data: {}", e.getMessage());
+            }
+            
+            // Convert CSV record to comma-separated string of actual values
+            // Use the most reliable method first
+            String rawData = convertCsvRecordToStringRobust(record);
+            
+            // Debug logging to see the converted result
+            log.debug("Converted raw data for row {}: '{}'", i + 1, rawData);
+            
+            // Validate that the result doesn't contain object references
+            if (rawData.contains("CSVRecord") || rawData.contains("recordNumber=") || rawData.contains("values=")) {
+                log.error("CRITICAL ERROR: CSVRecord object reference found in raw data: '{}'", rawData);
+                errors.add("Row " + (i + 1) + " contains object reference instead of data");
+                rejectedRows++;
+                continue;
+            }
             
             try {
                 if (fileType == FileType.ORDERS) {
@@ -308,6 +396,7 @@ public class FileIngestionService {
                             .build();
                     orderRawRepository.save(rawEntity);
                     acceptedRows++;
+                    log.debug("Saved OrderRawEntity for row {} with rawData: '{}'", i + 1, rawData);
                 } else {
                     PaymentRawEntity rawEntity = PaymentRawEntity.builder()
                             .batchId(batchId)
@@ -318,6 +407,7 @@ public class FileIngestionService {
                             .build();
                     paymentRawRepository.save(rawEntity);
                     acceptedRows++;
+                    log.debug("Saved PaymentRawEntity for row {} with rawData: '{}'", i + 1, rawData);
                 }
             } catch (Exception e) {
                 log.error("Error processing row {} in batch {}: {}", i + 1, batchId, e.getMessage());
@@ -325,6 +415,8 @@ public class FileIngestionService {
                 errors.add("Row " + (i + 1) + " processing failed: " + e.getMessage());
             }
         }
+        
+        log.info("Completed processing CSV records. Accepted: {}, Rejected: {}", acceptedRows, rejectedRows);
         
         return createSuccessResponse(batchId, acceptedRows, rejectedRows, warnings, errors, file, fileType);
     }
@@ -387,6 +479,240 @@ public class FileIngestionService {
             }
         }
         return sb.toString();
+    }
+
+    private String convertCsvRecordToString(CSVRecord record) {
+        StringBuilder sb = new StringBuilder();
+        
+        // Debug logging to see what we're working with
+        log.debug("Converting CSVRecord: size={}, recordNumber={}", record.size(), record.getRecordNumber());
+        
+        // Try to get the header names to use as a fallback
+        Map<String, Integer> headerMap = record.getParser().getHeaderMap();
+        log.debug("Header map: {}", headerMap);
+        
+        for (int i = 0; i < record.size(); i++) {
+            String value = record.get(i);
+            
+            // Debug logging for each field
+            log.debug("Field {}: '{}'", i, value);
+            
+            if (value != null) {
+                // Trim the value to remove any leading/trailing whitespace
+                String trimmedValue = value.trim();
+                sb.append(trimmedValue);
+            } else {
+                // For null values, append empty string
+                sb.append("");
+            }
+            
+            // Add comma separator (but not after the last field)
+            if (i < record.size() - 1) {
+                sb.append(",");
+            }
+        }
+        
+        String result = sb.toString();
+        log.debug("Converted CSVRecord to string: '{}'", result);
+        
+        return result;
+    }
+    
+    /**
+     * Alternative method to convert CSVRecord to string using header names
+     * This can be more reliable in some cases
+     */
+    private String convertCsvRecordToStringAlternative(CSVRecord record) {
+        StringBuilder sb = new StringBuilder();
+        
+        try {
+            // Get the header map from the parser
+            Map<String, Integer> headerMap = record.getParser().getHeaderMap();
+            
+            if (headerMap != null && !headerMap.isEmpty()) {
+                // Use header names to extract values
+                String[] headerNames = headerMap.keySet().toArray(new String[0]);
+                
+                for (int i = 0; i < headerNames.length; i++) {
+                    String headerName = headerNames[i];
+                    String value = record.get(headerName);
+                    
+                    log.debug("Header '{}': value='{}'", headerName, value);
+                    
+                    if (value != null) {
+                        String trimmedValue = value.trim();
+                        sb.append(trimmedValue);
+                    } else {
+                        sb.append("");
+                    }
+                    
+                    if (i < headerNames.length - 1) {
+                        sb.append(",");
+                    }
+                }
+            } else {
+                // Fallback to index-based access
+                log.warn("No header map available, falling back to index-based access");
+                return convertCsvRecordToString(record);
+            }
+        } catch (Exception e) {
+            log.error("Error in alternative CSV conversion method: {}", e.getMessage());
+            // Fallback to the original method
+            return convertCsvRecordToString(record);
+        }
+        
+        String result = sb.toString();
+        log.debug("Alternative conversion result: '{}'", result);
+        
+        return result;
+    }
+    
+    /**
+     * Direct method using CSVRecord.values() array
+     * This should be the most reliable method
+     */
+    private String convertCsvRecordToStringDirect(CSVRecord record) {
+        try {
+            // Get the values array directly from the CSVRecord
+            String[] values = record.values();
+            log.debug("Direct values array: {}", Arrays.toString(values));
+            
+            // Join the values with commas
+            String result = String.join(",", values);
+            log.debug("Direct conversion result: '{}'", result);
+            
+            return result;
+        } catch (Exception e) {
+            log.error("Error in direct CSV conversion method: {}", e.getMessage());
+            // Fallback to the original method
+            return convertCsvRecordToString(record);
+        }
+    }
+    
+    /**
+     * Robust method that handles various CSV format issues
+     */
+    private String convertCsvRecordToStringRobust(CSVRecord record) {
+        try {
+            // First try the direct method
+            String directResult = convertCsvRecordToStringDirect(record);
+            
+            // Validate the result - it should not contain "CSVRecord" or other object references
+            if (directResult.contains("CSVRecord") || directResult.contains("recordNumber=") || directResult.contains("values=")) {
+                log.warn("Direct method returned object reference, trying alternative method");
+                
+                // Try the header-based method
+                String headerResult = convertCsvRecordToStringAlternative(record);
+                
+                // Validate this result too
+                if (headerResult.contains("CSVRecord") || headerResult.contains("recordNumber=") || headerResult.contains("values=")) {
+                    log.error("All methods failed, CSVRecord object is being converted to string incorrectly");
+                    
+                    // As a last resort, try to manually extract values
+                    StringBuilder sb = new StringBuilder();
+                    for (int i = 0; i < record.size(); i++) {
+                        try {
+                            String value = record.get(i);
+                            if (value != null) {
+                                sb.append(value.trim());
+                            }
+                            if (i < record.size() - 1) {
+                                sb.append(",");
+                            }
+                        } catch (Exception e) {
+                            log.error("Error extracting field {}: {}", i, e.getMessage());
+                            sb.append("");
+                            if (i < record.size() - 1) {
+                                sb.append(",");
+                            }
+                        }
+                    }
+                    return sb.toString();
+                }
+                
+                return headerResult;
+            }
+            
+            return directResult;
+            
+        } catch (Exception e) {
+            log.error("Error in robust CSV conversion method: {}", e.getMessage());
+            
+            // Try one more approach - use reflection to access the internal values
+            try {
+                log.warn("Attempting reflection-based approach to extract CSV values");
+                return extractCsvValuesWithReflection(record);
+            } catch (Exception reflectionException) {
+                log.error("Reflection approach also failed: {}", reflectionException.getMessage());
+                return "ERROR_PARSING_CSV";
+            }
+        }
+    }
+    
+    /**
+     * Last resort method using reflection to access CSVRecord internals
+     */
+    private String extractCsvValuesWithReflection(CSVRecord record) throws Exception {
+        try {
+            // Try to access the internal values field using reflection
+            java.lang.reflect.Field valuesField = record.getClass().getDeclaredField("values");
+            valuesField.setAccessible(true);
+            String[] values = (String[]) valuesField.get(record);
+            
+            if (values != null) {
+                log.info("Successfully extracted values using reflection: {}", Arrays.toString(values));
+                return String.join(",", values);
+            } else {
+                log.warn("Reflection returned null values");
+                return "ERROR_NO_VALUES";
+            }
+        } catch (Exception e) {
+            log.error("Reflection failed: {}", e.getMessage());
+            throw e;
+        }
+    }
+    
+    /**
+     * Test method to understand CSVRecord behavior
+     */
+    private void testCsvRecordBehavior(CSVRecord record) {
+        log.info("=== CSVRecord Behavior Test ===");
+        log.info("Record class: {}", record.getClass().getName());
+        log.info("Record size: {}", record.size());
+        log.info("Record recordNumber: {}", record.getRecordNumber());
+        
+        // Test toString method
+        String toStringResult = record.toString();
+        log.info("toString() result: '{}'", toStringResult);
+        
+        // Test values method
+        try {
+            String[] values = record.values();
+            log.info("values() result: {}", Arrays.toString(values));
+        } catch (Exception e) {
+            log.error("values() method failed: {}", e.getMessage());
+        }
+        
+        // Test get method
+        try {
+            for (int i = 0; i < Math.min(3, record.size()); i++) {
+                String value = record.get(i);
+                log.info("get({}) result: '{}'", i, value);
+            }
+        } catch (Exception e) {
+            log.error("get() method failed: {}", e.getMessage());
+        }
+        
+        // Test if we can access the parser
+        try {
+            var parser = record.getParser();
+            var headerMap = parser.getHeaderMap();
+            log.info("Header map: {}", headerMap);
+        } catch (Exception e) {
+            log.error("Parser access failed: {}", e.getMessage());
+        }
+        
+        log.info("=== End CSVRecord Behavior Test ===");
     }
     
     private IngestionResponse createSuccessResponse(String batchId, int acceptedRows, int rejectedRows, 

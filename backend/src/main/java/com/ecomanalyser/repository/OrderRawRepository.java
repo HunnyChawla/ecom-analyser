@@ -22,5 +22,11 @@ public interface OrderRawRepository extends JpaRepository<OrderRawEntity, Long> 
     @Query("SELECT COUNT(o) FROM OrderRawEntity o WHERE o.batchId = :batchId")
     Long countTotalRowsByBatchId(@Param("batchId") String batchId);
     
+    @Query("SELECT COUNT(o) FROM OrderRawEntity o WHERE o.batchId = :batchId AND o.processed = :processed")
+    Long countByBatchIdAndProcessed(@Param("batchId") String batchId, @Param("processed") Boolean processed);
+    
+    @Query("SELECT o FROM OrderRawEntity o WHERE o.batchId = :batchId AND o.validationStatus = :validationStatus")
+    List<OrderRawEntity> findByBatchIdAndValidationStatus(@Param("batchId") String batchId, @Param("validationStatus") OrderRawEntity.ValidationStatus validationStatus);
+    
     void deleteByBatchId(String batchId);
 }
