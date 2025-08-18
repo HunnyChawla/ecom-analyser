@@ -283,6 +283,14 @@ public class ExcelImportService {
                     
                     BigDecimal amount = parseBigDecimal(amtStr);
                     LocalDate date = parseToLocalDate(dateStr);
+                    if (amount == null) {
+                        amount = BigDecimal.ZERO;
+                        warn("Row " + r + " (" + orderId + "): Amount missing/invalid; set to 0");
+                    }
+                    if (date == null) {
+                        date = LocalDate.now();
+                        warn("Row " + r + " (" + orderId + "): Payment date missing/invalid; set to today");
+                    }
                     
                     // Get order status from column F (Live Order Status)
                     String orderStatus = getCellAny(row, hmap, List.of("Live Order Status", "Order Status", "Status"), null);
@@ -614,14 +622,24 @@ public class ExcelImportService {
                 String paymentId = getAny(r, headerMap, List.of("payment id", "paymentId", "transaction id"), 0);
                 String orderId = getAny(r, headerMap, List.of("order id", "orderId", "sub order no", "sub order number"), 1);
                 String amtStr = getAny(r, headerMap, List.of("final settlement amount", "net settlement amount", "amount"), 2);
-                BigDecimal amount = new BigDecimal(cleanNumeric(amtStr));
+                BigDecimal amount;
+                try {
+                    amount = new BigDecimal(cleanNumeric(amtStr));
+                } catch (Exception ex) {
+                    amount = BigDecimal.ZERO;
+                    warn("CSV: orderId=" + orderId + ": Amount '" + amtStr + "' invalid; set to 0");
+                }
                 LocalDate date = parseToLocalDate(getAny(r, headerMap, List.of("payment date", "settlement date", "date"), 3));
+                if (date == null) {
+                    date = LocalDate.now();
+                    warn("CSV: orderId=" + orderId + ": Payment date missing/invalid; set to today");
+                }
                 String orderStatus = getAny(r, headerMap, List.of("live order status", "order status", "status"), 4);
                 
                 // Validate that order status is not null or blank
                 if (orderStatus == null || orderStatus.isBlank()) {
-                    log.warn("CSV row: Skipping row with null/blank order status for order {}", orderId);
-                    continue;
+                    orderStatus = "UNKNOWN";
+                    warn("CSV: orderId=" + orderId + ": Missing order status; set to UNKNOWN");
                 }
                 
                 // Enrich with order SKU and order date
