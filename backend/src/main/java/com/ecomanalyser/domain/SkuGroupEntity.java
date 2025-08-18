@@ -1,5 +1,6 @@
 package com.ecomanalyser.domain;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -38,6 +39,7 @@ public class SkuGroupEntity {
     private LocalDateTime updatedAt;
     
     @OneToMany(mappedBy = "skuGroup", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @JsonIgnore
     private List<SkuGroupMappingEntity> skuMappings;
     
     @PrePersist
