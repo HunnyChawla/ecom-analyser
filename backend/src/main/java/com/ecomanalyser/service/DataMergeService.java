@@ -418,6 +418,21 @@ public class DataMergeService {
                     orderAmount = order.getSellingPrice().multiply(BigDecimal.valueOf(order.getQuantity()));
                 }
             }
+            
+            // Enhanced SKU resolution: try order SKU first, then fallback to payment SKU
+            if (sku == null || sku.isBlank()) {
+                // Try to get SKU from any payment for this order
+                sku = orderPayments.stream()
+                        .map(PaymentEntity::getSku)
+                        .filter(Objects::nonNull)
+                        .filter(s -> !s.isBlank())
+                        .findFirst()
+                        .orElse(null);
+                
+                if (sku != null) {
+                    log.debug("Resolved SKU for order {} from payment: {}", orderId, sku);
+                }
+            }
 
             LocalDate paymentDate = latestPayment != null && latestPayment.getPaymentDateTime() != null
                     ? latestPayment.getPaymentDateTime().toLocalDate()
@@ -477,6 +492,11 @@ public class DataMergeService {
         // Set final status from order
         merged.setFinalStatus(order.getReasonForCreditEntry());
         
+        // Log warning if SKU is missing
+        if (merged.getSku() == null || merged.getSku().isBlank()) {
+            log.warn("Order {} has no SKU information", order.getOrderId());
+        }
+        
         return merged;
     }
     
@@ -503,6 +523,15 @@ public class DataMergeService {
         } else {
             // Order doesn't exist, use payment order ID
             merged.setOrderId(payment.getOrderId());
+        }
+        
+        // Enhanced SKU resolution: try order SKU first, then fallback to payment SKU
+        if (merged.getSku() == null || merged.getSku().isBlank()) {
+            String paymentSku = payment.getSku();
+            if (paymentSku != null && !paymentSku.isBlank()) {
+                merged.setSku(paymentSku);
+                log.debug("Resolved SKU for order {} from payment: {}", merged.getOrderId(), paymentSku);
+            }
         }
         
         // Copy payment data
