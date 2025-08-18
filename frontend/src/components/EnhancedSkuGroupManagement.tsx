@@ -10,7 +10,9 @@ import {
   Search,
   X,
   Save,
-  AlertCircle
+  AlertCircle,
+  Upload,
+  Download
 } from 'lucide-react';
 import { api } from '../utils/api';
 
@@ -44,6 +46,7 @@ const EnhancedSkuGroupManagement: React.FC = () => {
   const [showDeleteGroupModal, setShowDeleteGroupModal] = useState(false);
   const [showAddSkuModal, setShowAddSkuModal] = useState(false);
   const [showUpdateSkuModal, setShowUpdateSkuModal] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
   
   // Form states
   const [newGroup, setNewGroup] = useState({
@@ -60,6 +63,12 @@ const EnhancedSkuGroupManagement: React.FC = () => {
   const [selectedSku, setSelectedSku] = useState<string>('');
   const [selectedSkuGroup, setSelectedSkuGroup] = useState<number>(0);
   const [selectedGroup, setSelectedGroup] = useState<SkuGroup | null>(null);
+  
+  // Upload states
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadLoading, setUploadLoading] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState('');
+  const [uploadError, setUploadError] = useState('');
 
   useEffect(() => {
     fetchGroups();
@@ -209,6 +218,62 @@ const EnhancedSkuGroupManagement: React.FC = () => {
     setShowUpdateSkuModal(true);
   };
 
+  const handleFileUpload = async () => {
+    if (!uploadFile) return;
+    
+    setUploadLoading(true);
+    setUploadError('');
+    setUploadMessage('');
+    
+    const formData = new FormData();
+    formData.append('file', uploadFile);
+    
+    try {
+      const response = await api.post('/api/sku-groups/upload', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      
+      setUploadMessage(`Successfully imported ${response.data.importedGroups} groups`);
+      setUploadFile(null);
+      
+      // Refresh data
+      await fetchGroups();
+      await fetchSkuMappings();
+      
+      // Close modal after a delay
+      setTimeout(() => {
+        setShowUploadModal(false);
+        setUploadMessage('');
+      }, 2000);
+      
+    } catch (error: any) {
+      setUploadError(error.response?.data?.error || 'Upload failed');
+    } finally {
+      setUploadLoading(false);
+    }
+  };
+
+  const downloadTemplate = async () => {
+    try {
+      const response = await api.get('/api/sku-groups/template', {
+        responseType: 'blob',
+      });
+      
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'sku_group_template.xlsx');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error downloading template:', error);
+    }
+  };
+
   const filteredGroups = groups.filter(group => 
     group.groupName.toLowerCase().includes(searchTerm.toLowerCase()) ||
     group.description.toLowerCase().includes(searchTerm.toLowerCase())
@@ -241,6 +306,20 @@ const EnhancedSkuGroupManagement: React.FC = () => {
           >
             <Package className="w-4 h-4" />
             <span>Add SKU to Group</span>
+          </button>
+          <button
+            onClick={() => setShowUploadModal(true)}
+            className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors flex items-center space-x-2"
+          >
+            <Upload className="w-4 h-4" />
+            <span>Upload Excel</span>
+          </button>
+          <button
+            onClick={downloadTemplate}
+            className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors flex items-center space-x-2"
+          >
+            <Download className="w-4 h-4" />
+            <span>Download Template</span>
           </button>
         </div>
       </div>
@@ -631,6 +710,65 @@ const EnhancedSkuGroupManagement: React.FC = () => {
                   className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                 >
                   {loading ? 'Updating...' : 'Update Group'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upload Excel Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Upload SKU Groups Excel</h3>
+              <button
+                onClick={() => setShowUploadModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Excel File</label>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Upload Excel file with columns: Group Name, SKU, Purchase Price, Description
+                </p>
+              </div>
+              
+              {uploadMessage && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                  <p className="text-green-800 text-sm">{uploadMessage}</p>
+                </div>
+              )}
+              
+              {uploadError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <p className="text-red-800 text-sm">{uploadError}</p>
+                </div>
+              )}
+              
+              <div className="flex space-x-3 pt-4">
+                <button
+                  onClick={() => setShowUploadModal(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleFileUpload}
+                  disabled={uploadLoading || !uploadFile}
+                  className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+                >
+                  {uploadLoading ? 'Uploading...' : 'Upload File'}
                 </button>
               </div>
             </div>
