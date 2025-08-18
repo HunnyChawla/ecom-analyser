@@ -12,6 +12,8 @@ import com.ecomanalyser.repository.MergedOrderPaymentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.context.ApplicationContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -25,6 +27,8 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class AnalyticsService {
+    private static final Logger log = LoggerFactory.getLogger(AnalyticsService.class);
+    
     private final OrderRepository orderRepository;
     private final PaymentRepository paymentRepository;
     private final SkuPriceRepository skuPriceRepository;
@@ -255,12 +259,27 @@ public class AnalyticsService {
         
         mergedOrders.forEach(merged -> {
             BigDecimal settlementAmount = merged.getSettlementAmount() != null ? merged.getSettlementAmount() : BigDecimal.ZERO;
-            BigDecimal orderAmount = merged.getOrderAmount() != null ? merged.getOrderAmount() : BigDecimal.ZERO;
-            BigDecimal profit = settlementAmount.subtract(orderAmount);
             
-            if (profit.signum() > 0) {
-                LocalDate key = aggregateDate(merged.getOrderDate(), agg);
-                totals.merge(key, profit, BigDecimal::add);
+            if (settlementAmount.compareTo(BigDecimal.ZERO) > 0 && merged.getSkuId() != null && merged.getQuantity() != null) {
+                try {
+                    // Get purchase price for this SKU
+                    BigDecimal purchasePrice = getPurchasePriceForSku(merged.getSkuId());
+                    
+                    if (purchasePrice.compareTo(BigDecimal.ZERO) > 0) {
+                        // Calculate COGS: Purchase Price × Quantity
+                        BigDecimal cogs = purchasePrice.multiply(BigDecimal.valueOf(merged.getQuantity()));
+                        
+                        // Calculate profit: Revenue - COGS
+                        BigDecimal profit = settlementAmount.subtract(cogs);
+                        
+                        if (profit.signum() > 0) {
+                            LocalDate key = aggregateDate(merged.getOrderDate(), agg);
+                            totals.merge(key, profit, BigDecimal::add);
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("Error calculating profit for SKU {}: {}", merged.getSkuId(), e.getMessage());
+                }
             }
         });
         
@@ -276,12 +295,27 @@ public class AnalyticsService {
         
         mergedOrders.forEach(merged -> {
             BigDecimal settlementAmount = merged.getSettlementAmount() != null ? merged.getSettlementAmount() : BigDecimal.ZERO;
-            BigDecimal orderAmount = merged.getOrderAmount() != null ? merged.getOrderAmount() : BigDecimal.ZERO;
-            BigDecimal profit = settlementAmount.subtract(orderAmount);
             
-            if (profit.signum() < 0) {
-                LocalDate key = aggregateDate(merged.getOrderDate(), agg);
-                totals.merge(key, profit.abs(), BigDecimal::add);
+            if (settlementAmount.compareTo(BigDecimal.ZERO) > 0 && merged.getSkuId() != null && merged.getQuantity() != null) {
+                try {
+                    // Get purchase price for this SKU
+                    BigDecimal purchasePrice = getPurchasePriceForSku(merged.getSkuId());
+                    
+                    if (purchasePrice.compareTo(BigDecimal.ZERO) > 0) {
+                        // Calculate COGS: Purchase Price × Quantity
+                        BigDecimal cogs = purchasePrice.multiply(BigDecimal.valueOf(merged.getQuantity()));
+                        
+                        // Calculate profit/loss: Revenue - COGS
+                        BigDecimal netProfit = settlementAmount.subtract(cogs);
+                        
+                        if (netProfit.signum() < 0) {
+                            LocalDate key = aggregateDate(merged.getOrderDate(), agg);
+                            totals.merge(key, netProfit.abs(), BigDecimal::add);
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("Error calculating loss for SKU {}: {}", merged.getSkuId(), e.getMessage());
+                }
             }
         });
         
@@ -326,12 +360,33 @@ public class AnalyticsService {
             BigDecimal settlementAmount = merged.getSettlementAmount() != null ? merged.getSettlementAmount() : BigDecimal.ZERO;
             totalRevenue = totalRevenue.add(settlementAmount);
             
-            // Calculate profit/loss based on settlement amount vs order amount
-            BigDecimal orderAmount = merged.getOrderAmount() != null ? merged.getOrderAmount() : BigDecimal.ZERO;
-            if (settlementAmount.compareTo(orderAmount) > 0) {
-                totalProfit = totalProfit.add(settlementAmount.subtract(orderAmount));
-            } else if (settlementAmount.compareTo(orderAmount) < 0) {
-                totalLoss = totalLoss.add(orderAmount.subtract(settlementAmount));
+            // Calculate actual profit/loss: Revenue - Cost of Goods Sold
+            BigDecimal profit = BigDecimal.ZERO;
+            BigDecimal loss = BigDecimal.ZERO;
+            
+            if (merged.getSkuId() != null && merged.getQuantity() != null && settlementAmount.compareTo(BigDecimal.ZERO) > 0) {
+                try {
+                    // Get purchase price for this SKU
+                    BigDecimal purchasePrice = getPurchasePriceForSku(merged.getSkuId());
+                    
+                    if (purchasePrice.compareTo(BigDecimal.ZERO) > 0) {
+                        // Calculate COGS: Purchase Price × Quantity
+                        BigDecimal cogs = purchasePrice.multiply(BigDecimal.valueOf(merged.getQuantity()));
+                        
+                        // Calculate profit/loss: Revenue - COGS
+                        BigDecimal netProfit = settlementAmount.subtract(cogs);
+                        
+                        if (netProfit.signum() > 0) {
+                            totalProfit = totalProfit.add(netProfit);
+                        } else if (netProfit.signum() < 0) {
+                            totalLoss = totalLoss.add(netProfit.abs());
+                        }
+                    } else {
+                        log.debug("SKU {} has no purchase price, skipping profit calculation", merged.getSkuId());
+                    }
+                } catch (Exception e) {
+                    log.warn("Error calculating profit for SKU {}: {}", merged.getSkuId(), e.getMessage());
+                }
             }
         }
 
