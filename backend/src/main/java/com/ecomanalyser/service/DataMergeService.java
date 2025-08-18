@@ -422,6 +422,10 @@ public class DataMergeService {
             LocalDate paymentDate = latestPayment != null && latestPayment.getPaymentDateTime() != null
                     ? latestPayment.getPaymentDateTime().toLocalDate()
                     : null;
+            // Prefer order_date_time from payments when available, else fallback to orders
+            if (latestPayment != null && latestPayment.getOrderDateTime() != null) {
+                orderDate = latestPayment.getOrderDateTime().toLocalDate();
+            }
             String transactionId = latestPayment != null && latestPayment.getTransactionId() != null && !latestPayment.getTransactionId().isBlank()
                     ? latestPayment.getTransactionId()
                     : orderPayments.stream().map(PaymentEntity::getTransactionId).filter(Objects::nonNull).filter(s -> !s.isBlank()).findFirst().orElse(null);
