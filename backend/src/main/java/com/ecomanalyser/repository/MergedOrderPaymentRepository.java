@@ -24,6 +24,17 @@ public interface MergedOrderPaymentRepository extends JpaRepository<MergedOrderP
     
     @Query("SELECT m.skuId, SUM(m.settlementAmount) as totalProfit FROM MergedOrderPaymentEntity m WHERE m.orderDate BETWEEN :start AND :end AND m.settlementAmount > 0 GROUP BY m.skuId ORDER BY totalProfit DESC")
     List<Object[]> findTopProfitableSkus(@Param("start") LocalDate start, @Param("end") LocalDate end);
+    
+    @Query("SELECT m.orderStatus, COUNT(m) as count, EXTRACT(MONTH FROM m.orderDate) as month, EXTRACT(YEAR FROM m.orderDate) as year FROM MergedOrderPaymentEntity m GROUP BY m.orderStatus, EXTRACT(MONTH FROM m.orderDate), EXTRACT(YEAR FROM m.orderDate) ORDER BY year, month, count DESC")
+    List<Object[]> findOrderStatusCountsWithMonth();
+    
+    // Use a working method that we know works
+    @Query("SELECT m FROM MergedOrderPaymentEntity m WHERE m.orderStatus = :statusParam")
+    List<MergedOrderPaymentEntity> findByOrderStatus(@Param("statusParam") String status);
+    
+    // Get all data from merged_orders table
+    @Query("SELECT m FROM MergedOrderPaymentEntity m ORDER BY m.orderDate DESC")
+    List<MergedOrderPaymentEntity> findAllFromMergedOrders();
 }
 
 

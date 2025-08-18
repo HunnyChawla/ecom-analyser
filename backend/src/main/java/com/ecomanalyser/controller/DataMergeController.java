@@ -1,6 +1,8 @@
 package com.ecomanalyser.controller;
 
 import com.ecomanalyser.service.DataMergeService;
+import com.ecomanalyser.domain.MergedOrderPaymentEntity;
+import com.ecomanalyser.repository.MergedOrderPaymentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -17,18 +19,35 @@ import java.util.HashMap;
 public class DataMergeController {
 
     private final DataMergeService dataMergeService;
+    private final MergedOrderPaymentRepository mergedOrderPaymentRepository;
 
     /**
-     * Get merged orders and payments data
+     * Get merged orders and payments data from merged_orders table
      */
     @GetMapping("/merged-data")
-    public ResponseEntity<List<DataMergeService.MergedOrderData>> getMergedData() {
+    public ResponseEntity<List<Map<String, Object>>> getMergedData() {
         try {
-            log.info("Requesting merged orders and payments data");
-            List<DataMergeService.MergedOrderData> mergedData = dataMergeService.mergeOrdersAndPayments();
+            log.info("Requesting merged orders and payments data from merged_orders table");
+            List<MergedOrderPaymentEntity> mergedData = mergedOrderPaymentRepository.findAllFromMergedOrders();
             
-            log.info("Successfully retrieved {} merged records", mergedData.size());
-            return ResponseEntity.ok(mergedData);
+            // Map to UI-expected field names
+            List<Map<String, Object>> mappedData = mergedData.stream()
+                    .map(entity -> {
+                        Map<String, Object> mapped = new HashMap<>();
+                        mapped.put("orderId", entity.getOrderId());
+                        mapped.put("sku", entity.getSkuId());
+                        mapped.put("productName", "N/A"); // Not available in merged_orders table
+                        mapped.put("finalStatus", entity.getOrderStatus());
+                        mapped.put("statusSource", "MERGED_TABLE"); // Default source
+                        mapped.put("amount", entity.getSettlementAmount());
+                        mapped.put("quantity", entity.getQuantity());
+                        mapped.put("orderDateTime", entity.getOrderDate() != null ? entity.getOrderDate().atStartOfDay() : null);
+                        return mapped;
+                    })
+                    .toList();
+            
+            log.info("Successfully retrieved {} merged records from merged_orders table", mappedData.size());
+            return ResponseEntity.ok(mappedData);
         } catch (Exception e) {
             log.error("Error retrieving merged data: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError().build();
@@ -94,13 +113,28 @@ public class DataMergeController {
     @GetMapping("/merged-data/paginated")
     public ResponseEntity<Map<String, Object>> getMergedDataPaginated(
             @RequestParam("page") int page,
-            @RequestParam("size") int size) {
+            @RequestParam("size") int size,
+            @RequestParam(value = "q", required = false) String query) {
         try {
-            log.info("Requesting merged data with pagination - page: {}, size: {}", page, size);
-            
-            List<DataMergeService.MergedOrderData> allData = dataMergeService.mergeOrdersAndPayments();
-            
-            int totalRecords = allData.size();
+            log.info("Requesting merged data with pagination - page: {}, size: {}, query: {}", page, size, query);
+
+            // Read from merged_orders for consistency
+            List<MergedOrderPaymentEntity> allEntities = mergedOrderPaymentRepository.findAllFromMergedOrders();
+
+            // Optional search across orderId, skuId and orderStatus
+            List<MergedOrderPaymentEntity> filteredEntities = allEntities;
+            if (query != null && !query.trim().isEmpty()) {
+                String qLower = query.trim().toLowerCase();
+                filteredEntities = allEntities.stream()
+                        .filter(e ->
+                                (e.getOrderId() != null && e.getOrderId().toLowerCase().contains(qLower)) ||
+                                (e.getSkuId() != null && e.getSkuId().toLowerCase().contains(qLower)) ||
+                                (e.getOrderStatus() != null && e.getOrderStatus().toLowerCase().contains(qLower))
+                        )
+                        .toList();
+            }
+
+            int totalRecords = filteredEntities.size();
             int totalPages = (int) Math.ceil((double) totalRecords / size);
             
             // Validate page number
@@ -121,7 +155,23 @@ public class DataMergeController {
                 endIndex = Math.min(size, totalRecords);
             }
             
-            List<DataMergeService.MergedOrderData> paginatedData = allData.subList(startIndex, endIndex);
+            List<MergedOrderPaymentEntity> pageSlice = filteredEntities.subList(startIndex, endIndex);
+
+            // Map to UI-expected structure
+            List<Map<String, Object>> paginatedData = pageSlice.stream()
+                    .map(entity -> {
+                        Map<String, Object> mapped = new HashMap<>();
+                        mapped.put("orderId", entity.getOrderId());
+                        mapped.put("sku", entity.getSkuId());
+                        mapped.put("productName", "N/A");
+                        mapped.put("finalStatus", entity.getOrderStatus());
+                        mapped.put("statusSource", "MERGED_TABLE");
+                        mapped.put("amount", entity.getSettlementAmount());
+                        mapped.put("quantity", entity.getQuantity());
+                        mapped.put("orderDateTime", entity.getOrderDate() != null ? entity.getOrderDate().atStartOfDay() : null);
+                        return mapped;
+                    })
+                    .toList();
             
             // Build response with full data structure
             Map<String, Object> response = new HashMap<>();
@@ -133,7 +183,7 @@ public class DataMergeController {
             response.put("hasNext", page < totalPages - 1);
             response.put("hasPrevious", page > 0);
             
-            log.info("Successfully retrieved paginated merged data - page {} of {}", page + 1, totalPages);
+            log.info("Successfully retrieved paginated merged data - page {} of {} (filteredRecords={})", page + 1, totalPages, totalRecords);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("Error retrieving paginated merged data: {}", e.getMessage(), e);
@@ -145,8 +195,8 @@ public class DataMergeController {
      * Get merged data filtered by final status
      */
     @GetMapping("/merged-data/status/{status}")
-    public ResponseEntity<List<DataMergeService.MergedOrderData>> getMergedDataByStatus(
-            @PathVariable String status) {
+    public ResponseEntity<Map<String, Object>> getMergedDataByStatus(
+            @PathVariable("status") String status) {
         try {
             log.info("Requesting merged data filtered by status: {}", status);
             
@@ -155,14 +205,42 @@ public class DataMergeController {
                 return ResponseEntity.badRequest().build();
             }
             
-            List<DataMergeService.MergedOrderData> allData = dataMergeService.mergeOrdersAndPayments();
-            List<DataMergeService.MergedOrderData> filteredData = allData.stream()
-                    .filter(record -> record.getFinalStatus() != null && 
-                                   status.equalsIgnoreCase(record.getFinalStatus().trim()))
+            // Use the merged_orders table directly for consistency and performance
+            List<MergedOrderPaymentEntity> allData = mergedOrderPaymentRepository.findAllFromMergedOrders();
+            List<MergedOrderPaymentEntity> filteredData = allData.stream()
+                    .filter(record -> record.getOrderStatus() != null && 
+                                   status.equalsIgnoreCase(record.getOrderStatus().trim()))
                     .toList();
             
+            // Map to UI-expected field names
+            List<Map<String, Object>> mappedData = filteredData.stream()
+                    .map(entity -> {
+                        Map<String, Object> mapped = new HashMap<>();
+                        mapped.put("orderId", entity.getOrderId());
+                        mapped.put("sku", entity.getSkuId());
+                        mapped.put("productName", "N/A"); // Not available in merged_orders table
+                        mapped.put("finalStatus", entity.getOrderStatus());
+                        mapped.put("statusSource", "MERGED_TABLE"); // Default source
+                        mapped.put("amount", entity.getSettlementAmount());
+                        mapped.put("quantity", entity.getQuantity());
+                        mapped.put("orderDateTime", entity.getOrderDate() != null ? entity.getOrderDate().atStartOfDay() : null);
+                        return mapped;
+                    })
+                    .toList();
+            
+            // Build consistent response structure matching the paginated endpoint
+            Map<String, Object> response = new HashMap<>();
+            response.put("data", mappedData);
+            response.put("totalRecords", mappedData.size());
+            response.put("pageSize", mappedData.size());
+            response.put("currentPage", 0);
+            response.put("totalPages", 1);
+            response.put("hasNext", false);
+            response.put("hasPrevious", false);
+            response.put("status", status);
+            
             log.info("Found {} records with status: {}", filteredData.size(), status);
-            return ResponseEntity.ok(filteredData);
+            return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("Error retrieving merged data by status: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError().build();

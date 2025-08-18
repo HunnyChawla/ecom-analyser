@@ -1,6 +1,7 @@
 package com.ecomanalyser.service;
 
 import com.ecomanalyser.domain.OrderEntity;
+import com.ecomanalyser.domain.PaymentEntity;
 import com.ecomanalyser.domain.SkuPriceEntity;
 import com.ecomanalyser.domain.MergedOrderPaymentEntity;
 import com.ecomanalyser.dto.ChartResponse;
@@ -51,12 +52,34 @@ public class AnalyticsService {
     }
 
     public ChartResponse<TimeSeriesPoint> paymentsByTime(LocalDate start, LocalDate end, Aggregation agg) {
-        List<MergedOrderPaymentEntity> payments = mergedOrderRepository.findByPaymentDateBetween(start, end);
+        // Use original payments table for accurate payment amounts (not merged orders)
+        LocalDateTime startDateTime = start.atStartOfDay();
+        LocalDateTime endDateTime = end.plusDays(1).atStartOfDay().minusNanos(1);
+        List<PaymentEntity> payments = paymentRepository.findByPaymentDateTimeBetween(startDateTime, endDateTime);
+        
+        log.debug("paymentsByTime: Found {} payments between {} and {} from payments table", payments.size(), start, end);
+        
         Map<LocalDate, BigDecimal> totals = new TreeMap<>();
+        Map<LocalDate, Integer> counts = new TreeMap<>();
+        
         payments.forEach(p -> {
-            LocalDate key = aggregateDate(p.getPaymentDate(), agg);
-            totals.merge(key, p.getSettlementAmount() != null ? p.getSettlementAmount() : BigDecimal.ZERO, BigDecimal::add);
+            LocalDate key = aggregateDate(p.getPaymentDateTime().toLocalDate(), agg);
+            BigDecimal amount = p.getAmount() != null ? p.getAmount() : BigDecimal.ZERO;
+            totals.merge(key, amount, BigDecimal::add);
+            counts.merge(key, 1, Integer::sum);
+            
+            // Debug logging for specific date if requested
+            if (start.equals(end) && p.getPaymentDateTime() != null && p.getPaymentDateTime().toLocalDate().equals(start)) {
+                log.debug("Payment for {}: OrderId={}, SKU={}, Amount={}", 
+                    p.getPaymentDateTime().toLocalDate(), p.getOrderId(), p.getSku(), amount);
+            }
         });
+        
+        // Log totals for debugging
+        totals.forEach((date, total) -> {
+            log.debug("Date {}: {} payments, total amount: {}", date, counts.get(date), total);
+        });
+        
         List<TimeSeriesPoint> points = totals.entrySet().stream()
                 .map(en -> new TimeSeriesPoint(en.getKey(), en.getValue()))
                 .toList();
@@ -211,13 +234,15 @@ public class AnalyticsService {
     // New method to get order counts by status with month breakdown
     public List<Map<String, Object>> getOrderCountsByStatusWithMonthBreakdown() {
         try {
-            System.out.println("getOrderCountsByStatusWithMonthBreakdown called");
+            log.debug("getOrderCountsByStatusWithMonthBreakdown called");
             
-            var rows = paymentRepository.getOrderCountsByStatusWithMonth();
-            System.out.println("Repository returned " + rows.size() + " rows");
+            // Use merged orders table for consistency with getOrderCountsByStatus
+            // This ensures both endpoints return the same data
+            var rows = mergedOrderRepository.findOrderStatusCountsWithMonth();
+            log.debug("Repository returned {} rows from merged orders table", rows.size());
             
             if (rows.isEmpty()) {
-                System.out.println("No rows returned from repository");
+                log.debug("No rows returned from repository");
                 return new ArrayList<>();
             }
             
@@ -236,11 +261,10 @@ public class AnalyticsService {
                 return m;
             }).toList();
             
-            System.out.println("Returning " + result.size() + " items with month breakdown");
+            log.debug("Returning {} items with month breakdown", result.size());
             return result;
         } catch (Exception e) {
-            System.err.println("Error in getOrderCountsByStatusWithMonthBreakdown: " + e.getMessage());
-            e.printStackTrace();
+            log.warn("Error in getOrderCountsByStatusWithMonthBreakdown: {}", e.getMessage());
             return new ArrayList<>();
         }
     }
