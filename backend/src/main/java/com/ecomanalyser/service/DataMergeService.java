@@ -2,8 +2,10 @@ package com.ecomanalyser.service;
 
 import com.ecomanalyser.domain.OrderEntity;
 import com.ecomanalyser.domain.PaymentEntity;
+import com.ecomanalyser.domain.MergedOrderPaymentEntity;
 import com.ecomanalyser.repository.OrderRepository;
 import com.ecomanalyser.repository.PaymentRepository;
+import com.ecomanalyser.repository.MergedOrderPaymentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -21,6 +23,7 @@ public class DataMergeService {
 
     private final OrderRepository orderRepository;
     private final PaymentRepository paymentRepository;
+    private final MergedOrderPaymentRepository mergedRepo;
 
     /**
      * Merged data structure containing combined order and payment information
@@ -338,6 +341,69 @@ public class DataMergeService {
             log.error("Error in mergeOrdersAndPayments: {}", e.getMessage(), e);
             throw e;
         }
+    }
+
+    /**
+     * Rebuild merged table from current orders and payments
+     */
+    public int rebuildMergedTable() {
+        List<MergedOrderData> merged = mergeOrdersAndPayments();
+        mergedRepo.deleteAllInBatch();
+        List<MergedOrderPaymentEntity> entities = new ArrayList<>();
+        for (MergedOrderData m : merged) {
+            entities.add(MergedOrderPaymentEntity.builder()
+                    .orderId(m.getOrderId())
+                    .paymentId(m.getPaymentId())
+                    .sku(m.getSku())
+                    .quantity(m.getQuantity())
+                    .sellingPrice(m.getSellingPrice())
+                    .orderDateTime(m.getOrderDateTime())
+                    .productName(m.getProductName())
+                    .customerState(m.getCustomerState())
+                    .size(m.getSize())
+                    .supplierListedPrice(m.getSupplierListedPrice())
+                    .supplierDiscountedPrice(m.getSupplierDiscountedPrice())
+                    .packetId(m.getPacketId())
+                    .reasonForCreditEntry(m.getReasonForCreditEntry())
+                    .amount(m.getAmount())
+                    .paymentDateTime(m.getPaymentDateTime())
+                    .orderStatus(m.getOrderStatus())
+                    .transactionId(m.getTransactionId())
+                    .finalSettlementAmount(m.getFinalSettlementAmount())
+                    .priceType(m.getPriceType())
+                    .totalSaleAmount(m.getTotalSaleAmount())
+                    .totalSaleReturnAmount(m.getTotalSaleReturnAmount())
+                    .fixedFee(m.getFixedFee())
+                    .warehousingFee(m.getWarehousingFee())
+                    .returnPremium(m.getReturnPremium())
+                    .meeshoCommissionPercentage(m.getMeeshoCommissionPercentage())
+                    .meeshoCommission(m.getMeeshoCommission())
+                    .meeshoGoldPlatformFee(m.getMeeshoGoldPlatformFee())
+                    .meeshoMallPlatformFee(m.getMeeshoMallPlatformFee())
+                    .returnShippingCharge(m.getReturnShippingCharge())
+                    .gstCompensation(m.getGstCompensation())
+                    .shippingCharge(m.getShippingCharge())
+                    .otherSupportServiceCharges(m.getOtherSupportServiceCharges())
+                    .waivers(m.getWaivers())
+                    .netOtherSupportServiceCharges(m.getNetOtherSupportServiceCharges())
+                    .gstOnNetOtherSupportServiceCharges(m.getGstOnNetOtherSupportServiceCharges())
+                    .tcs(m.getTcs())
+                    .tdsRatePercentage(m.getTdsRatePercentage())
+                    .tds(m.getTds())
+                    .compensation(m.getCompensation())
+                    .compensationReason(m.getCompensationReason())
+                    .claims(m.getClaims())
+                    .claimsReason(m.getClaimsReason())
+                    .recovery(m.getRecovery())
+                    .recoveryReason(m.getRecoveryReason())
+                    .dispatchDate(m.getDispatchDate())
+                    .productGstPercentage(m.getProductGstPercentage())
+                    .listingPriceInclTaxes(m.getListingPriceInclTaxes())
+                    .finalStatus(m.getFinalStatus())
+                    .build());
+        }
+        mergedRepo.saveAll(entities);
+        return entities.size();
     }
     
     /**

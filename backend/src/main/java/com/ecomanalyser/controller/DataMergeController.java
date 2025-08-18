@@ -53,6 +53,23 @@ public class DataMergeController {
     }
 
     /**
+     * Rebuild merged table from orders and payments
+     */
+    @PostMapping("/rebuild")
+    public ResponseEntity<Map<String, Object>> rebuildMergedTable() {
+        try {
+            int count = dataMergeService.rebuildMergedTable();
+            return ResponseEntity.ok(java.util.Map.of(
+                    "message", "Merged table rebuilt",
+                    "records", count
+            ));
+        } catch (Exception e) {
+            log.error("Error rebuilding merged table: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
      * Simple test endpoint to check if data can be retrieved
      */
     @GetMapping("/test")
