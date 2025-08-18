@@ -58,6 +58,17 @@ public class ExcelImportService {
         return list;
     }
 
+    // Truncate overly long strings to fit VARCHAR(255)
+    private String clamp(String value, String fieldName) {
+        if (value == null) return null;
+        String v = value.trim();
+        if (v.length() > 255) {
+            warn(fieldName + " length " + v.length() + " > 255; truncated");
+            return v.substring(0, 255);
+        }
+        return v;
+    }
+
     @Transactional
     public int importOrders(MultipartFile file) throws Exception {
         log.info("Starting order import for file: {}", file.getOriginalFilename());
@@ -92,6 +103,7 @@ public class ExcelImportService {
                         orderId = "UNKNOWN-" + System.currentTimeMillis() + "-" + r;
                         warn("Row " + r + ": Missing orderId; generated " + orderId);
                     }
+                    orderId = clamp(orderId, "order_id");
                     
                     String sku = getCellAny(row, hmap, List.of("SKU", "Supplier SKU", "Product SKU"), null);
                     if (sku == null || sku.isBlank()) {
@@ -266,8 +278,9 @@ public class ExcelImportService {
                         orderId = "UNKNOWN-" + System.currentTimeMillis() + "-" + r;
                         warn("Row " + r + ": Missing orderId; generated " + orderId);
                     }
+                    orderId = clamp(orderId, "order_id");
                     
-                    String paymentId = getCellAny(row, hmap, List.of("Transaction ID", "Payment Id", "Payment ID", "Transaction"), null);
+                    String paymentId = clamp(getCellAny(row, hmap, List.of("Transaction ID", "Payment Id", "Payment ID", "Transaction"), null), "payment_id");
                     if (paymentId.isBlank()) {
                         paymentId = orderId + "-PAY"; // fallback payment ID
                     }
@@ -293,7 +306,7 @@ public class ExcelImportService {
                     }
                     
                     // Get order status from column F (Live Order Status)
-                    String orderStatus = getCellAny(row, hmap, List.of("Live Order Status", "Order Status", "Status"), null);
+                    String orderStatus = clamp(getCellAny(row, hmap, List.of("Live Order Status", "Order Status", "Status"), null), "order_status");
                     
                     // Do not skip for missing order status; default and warn
                     if (orderStatus == null || orderStatus.isBlank()) {
@@ -306,10 +319,10 @@ public class ExcelImportService {
                              r, orderId, paymentId, amount, date, orderStatus);
                     
                     // Get all additional payment fields
-                    String transactionId = getCellAny(row, hmap, List.of("Transaction ID", "Transaction Id"), null);
+                    String transactionId = clamp(getCellAny(row, hmap, List.of("Transaction ID", "Transaction Id"), null), "transaction_id");
                     String finalSettlementAmountStr = getCellAny(row, hmap, List.of("Final Settlement Amount", "Net Settlement Amount"), null);
                     BigDecimal finalSettlementAmount = parseBigDecimal(finalSettlementAmountStr);
-                    String priceType = getCellAny(row, hmap, List.of("Price Type"), null);
+                    String priceType = clamp(getCellAny(row, hmap, List.of("Price Type"), null), "price_type");
                     String totalSaleAmountStr = getCellAny(row, hmap, List.of("Total Sale Amount (Incl. Shipping & GST)"), null);
                     BigDecimal totalSaleAmount = parseBigDecimal(totalSaleAmountStr);
                     String totalSaleReturnAmountStr = getCellAny(row, hmap, List.of("Total Sale Return Amount (Incl. Shipping & GST)"), null);
@@ -354,9 +367,9 @@ public class ExcelImportService {
                     BigDecimal claims = parseBigDecimal(claimsStr);
                     String recoveryStr = getCellAny(row, hmap, List.of("Recovery"), null);
                     BigDecimal recovery = parseBigDecimal(recoveryStr);
-                    String compensationReason = getCellAny(row, hmap, List.of("Compensation Reason"), null);
-                    String claimsReason = getCellAny(row, hmap, List.of("Claims Reason"), null);
-                    String recoveryReason = getCellAny(row, hmap, List.of("Recovery Reason"), null);
+                    String compensationReason = clamp(getCellAny(row, hmap, List.of("Compensation Reason"), null), "compensation_reason");
+                    String claimsReason = clamp(getCellAny(row, hmap, List.of("Claims Reason"), null), "claims_reason");
+                    String recoveryReason = clamp(getCellAny(row, hmap, List.of("Recovery Reason"), null), "recovery_reason");
                     String dispatchDateStr = getCellAny(row, hmap, List.of("Dispatch Date"), null);
                     LocalDate dispatchDate = parseToLocalDate(dispatchDateStr);
                     String productGstPercentageStr = getCellAny(row, hmap, List.of("Product GST %"), null);
@@ -370,7 +383,7 @@ public class ExcelImportService {
                     try {
                         var orderOpt = orderRepository.findByOrderId(orderId);
                         if (orderOpt.isPresent()) {
-                            skuForOrder = orderOpt.get().getSku();
+                            skuForOrder = clamp(orderOpt.get().getSku(), "sku");
                             orderDateTimeVal = orderOpt.get().getOrderDateTime();
                         }
                     } catch (Exception ignored) {}
@@ -619,8 +632,8 @@ public class ExcelImportService {
              CSVParser parser = CSVFormat.DEFAULT.withFirstRecordAsHeader().parse(reader)) {
             var headerMap = parser.getHeaderMap();
             for (CSVRecord r : parser) {
-                String paymentId = getAny(r, headerMap, List.of("payment id", "paymentId", "transaction id"), 0);
-                String orderId = getAny(r, headerMap, List.of("order id", "orderId", "sub order no", "sub order number"), 1);
+                String paymentId = clamp(getAny(r, headerMap, List.of("payment id", "paymentId", "transaction id"), 0), "payment_id");
+                String orderId = clamp(getAny(r, headerMap, List.of("order id", "orderId", "sub order no", "sub order number"), 1), "order_id");
                 String amtStr = getAny(r, headerMap, List.of("final settlement amount", "net settlement amount", "amount"), 2);
                 BigDecimal amount;
                 try {
@@ -634,7 +647,7 @@ public class ExcelImportService {
                     date = LocalDate.now();
                     warn("CSV: orderId=" + orderId + ": Payment date missing/invalid; set to today");
                 }
-                String orderStatus = getAny(r, headerMap, List.of("live order status", "order status", "status"), 4);
+                String orderStatus = clamp(getAny(r, headerMap, List.of("live order status", "order status", "status"), 4), "order_status");
                 
                 // Validate that order status is not null or blank
                 if (orderStatus == null || orderStatus.isBlank()) {
@@ -648,7 +661,7 @@ public class ExcelImportService {
                 try {
                     var orderOpt = orderRepository.findByOrderId(orderId);
                     if (orderOpt.isPresent()) {
-                        skuForOrder = orderOpt.get().getSku();
+                        skuForOrder = clamp(orderOpt.get().getSku(), "sku");
                         orderDateTimeVal = orderOpt.get().getOrderDateTime();
                     }
                 } catch (Exception ignored) {}
