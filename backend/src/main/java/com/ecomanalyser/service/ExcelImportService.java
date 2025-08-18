@@ -694,6 +694,38 @@ public class ExcelImportService {
                     }
                 }
  
+                // Additional fields (align with Excel path)
+                String transactionId = clamp(getAny(r, headerMap, List.of("transaction id", "transaction"), null), "transaction_id");
+                BigDecimal finalSettlementAmount = null;
+                try { finalSettlementAmount = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("final settlement amount", "net settlement amount"), null))); } catch (Exception ignored) {}
+                String priceType = clamp(getAny(r, headerMap, List.of("price type"), null), "price_type");
+                BigDecimal totalSaleAmount = null; try { totalSaleAmount = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("total sale amount (incl. shipping & gst)"), null))); } catch (Exception ignored) {}
+                BigDecimal totalSaleReturnAmount = null; try { totalSaleReturnAmount = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("total sale return amount (incl. shipping & gst)"), null))); } catch (Exception ignored) {}
+                BigDecimal fixedFee = null; try { fixedFee = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("fixed fee (incl. gst)"), null))); } catch (Exception ignored) {}
+                BigDecimal warehousingFee = null; try { warehousingFee = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("warehousing fee (incl. gst)"), null))); } catch (Exception ignored) {}
+                BigDecimal returnPremium = null; try { returnPremium = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("return premium (incl. gst)"), null))); } catch (Exception ignored) {}
+                BigDecimal meeshoCommissionPercentage = null; try { meeshoCommissionPercentage = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("meesho commission percentage"), null))); } catch (Exception ignored) {}
+                BigDecimal meeshoCommission = null; try { meeshoCommission = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("meesho commission (incl. gst)"), null))); } catch (Exception ignored) {}
+                BigDecimal returnShippingCharge = null; try { returnShippingCharge = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("return shipping charge (incl. gst)"), null))); } catch (Exception ignored) {}
+                BigDecimal gstCompensation = null; try { gstCompensation = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("gst compensation (prp shipping)"), null))); } catch (Exception ignored) {}
+                BigDecimal shippingCharge = null; try { shippingCharge = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("shipping charge (incl. gst)"), null))); } catch (Exception ignored) {}
+                BigDecimal otherSupportServiceCharges = null; try { otherSupportServiceCharges = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("other support service charges (excl. gst)"), null))); } catch (Exception ignored) {}
+                BigDecimal waivers = null; try { waivers = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("waivers (excl. gst)"), null))); } catch (Exception ignored) {}
+                BigDecimal netOtherSupportServiceCharges = null; try { netOtherSupportServiceCharges = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("net other support service charges (excl. gst)"), null))); } catch (Exception ignored) {}
+                BigDecimal gstOnNetOtherSupportServiceCharges = null; try { gstOnNetOtherSupportServiceCharges = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("gst on net other support service charges"), null))); } catch (Exception ignored) {}
+                BigDecimal tcs = null; try { tcs = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("tcs"), null))); } catch (Exception ignored) {}
+                BigDecimal tdsRatePercentage = null; try { tdsRatePercentage = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("tds rate %"), null))); } catch (Exception ignored) {}
+                BigDecimal tds = null; try { tds = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("tds"), null))); } catch (Exception ignored) {}
+                BigDecimal compensation = null; try { compensation = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("compensation"), null))); } catch (Exception ignored) {}
+                BigDecimal claims = null; try { claims = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("claims"), null))); } catch (Exception ignored) {}
+                BigDecimal recovery = null; try { recovery = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("recovery"), null))); } catch (Exception ignored) {}
+                String compensationReason = clamp(getAny(r, headerMap, List.of("compensation reason"), null), "compensation_reason");
+                String claimsReason = clamp(getAny(r, headerMap, List.of("claims reason"), null), "claims_reason");
+                String recoveryReason = clamp(getAny(r, headerMap, List.of("recovery reason"), null), "recovery_reason");
+                LocalDate dispatchDate = parseToLocalDate(getAny(r, headerMap, List.of("dispatch date"), null));
+                BigDecimal productGstPercentage = null; try { productGstPercentage = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("product gst %"), null))); } catch (Exception ignored) {}
+                BigDecimal listingPriceInclTaxes = null; try { listingPriceInclTaxes = new BigDecimal(cleanNumeric(getAny(r, headerMap, List.of("listing price (incl. taxes)"), null))); } catch (Exception ignored) {}
+ 
                 toSave.add(PaymentEntity.builder()
                         .paymentId(paymentId)
                         .orderId(orderId)
@@ -702,6 +734,35 @@ public class ExcelImportService {
                         .paymentDateTime(date != null ? date.atStartOfDay() : null)
                         .orderDateTime(orderDateTimeVal)
                         .orderStatus(orderStatus)
+                        .transactionId(transactionId)
+                        .finalSettlementAmount(finalSettlementAmount)
+                        .priceType(priceType)
+                        .totalSaleAmount(totalSaleAmount)
+                        .totalSaleReturnAmount(totalSaleReturnAmount)
+                        .fixedFee(fixedFee)
+                        .warehousingFee(warehousingFee)
+                        .returnPremium(returnPremium)
+                        .meeshoCommissionPercentage(meeshoCommissionPercentage)
+                        .meeshoCommission(meeshoCommission)
+                        .returnShippingCharge(returnShippingCharge)
+                        .gstCompensation(gstCompensation)
+                        .shippingCharge(shippingCharge)
+                        .otherSupportServiceCharges(otherSupportServiceCharges)
+                        .waivers(waivers)
+                        .netOtherSupportServiceCharges(netOtherSupportServiceCharges)
+                        .gstOnNetOtherSupportServiceCharges(gstOnNetOtherSupportServiceCharges)
+                        .tcs(tcs)
+                        .tdsRatePercentage(tdsRatePercentage)
+                        .tds(tds)
+                        .compensation(compensation)
+                        .claims(claims)
+                        .recovery(recovery)
+                        .compensationReason(compensationReason)
+                        .claimsReason(claimsReason)
+                        .recoveryReason(recoveryReason)
+                        .dispatchDate(dispatchDate)
+                        .productGstPercentage(productGstPercentage)
+                        .listingPriceInclTaxes(listingPriceInclTaxes)
                         .build());
             }
         }
@@ -724,6 +785,35 @@ public class ExcelImportService {
                     existing.setOrderDateTime(payment.getOrderDateTime());
                     existing.setOrderStatus(payment.getOrderStatus());
                     existing.setSku(payment.getSku());
+                    existing.setTransactionId(payment.getTransactionId());
+                    existing.setFinalSettlementAmount(payment.getFinalSettlementAmount());
+                    existing.setPriceType(payment.getPriceType());
+                    existing.setTotalSaleAmount(payment.getTotalSaleAmount());
+                    existing.setTotalSaleReturnAmount(payment.getTotalSaleReturnAmount());
+                    existing.setFixedFee(payment.getFixedFee());
+                    existing.setWarehousingFee(payment.getWarehousingFee());
+                    existing.setReturnPremium(payment.getReturnPremium());
+                    existing.setMeeshoCommissionPercentage(payment.getMeeshoCommissionPercentage());
+                    existing.setMeeshoCommission(payment.getMeeshoCommission());
+                    existing.setReturnShippingCharge(payment.getReturnShippingCharge());
+                    existing.setGstCompensation(payment.getGstCompensation());
+                    existing.setShippingCharge(payment.getShippingCharge());
+                    existing.setOtherSupportServiceCharges(payment.getOtherSupportServiceCharges());
+                    existing.setWaivers(payment.getWaivers());
+                    existing.setNetOtherSupportServiceCharges(payment.getNetOtherSupportServiceCharges());
+                    existing.setGstOnNetOtherSupportServiceCharges(payment.getGstOnNetOtherSupportServiceCharges());
+                    existing.setTcs(payment.getTcs());
+                    existing.setTdsRatePercentage(payment.getTdsRatePercentage());
+                    existing.setTds(payment.getTds());
+                    existing.setCompensation(payment.getCompensation());
+                    existing.setClaims(payment.getClaims());
+                    existing.setRecovery(payment.getRecovery());
+                    existing.setCompensationReason(payment.getCompensationReason());
+                    existing.setClaimsReason(payment.getClaimsReason());
+                    existing.setRecoveryReason(payment.getRecoveryReason());
+                    existing.setDispatchDate(payment.getDispatchDate());
+                    existing.setProductGstPercentage(payment.getProductGstPercentage());
+                    existing.setListingPriceInclTaxes(payment.getListingPriceInclTaxes());
                     paymentRepository.save(existing);
                     savedCount++;
                 } else {
