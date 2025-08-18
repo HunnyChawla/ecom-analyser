@@ -85,22 +85,6 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-xl shadow-lg p-4 mb-6 border border-gray-100">
-        <div className="flex items-center gap-4">
-          <label className="text-sm font-medium text-gray-700">📊 Chart Aggregation:</label>
-          <select 
-            value={agg} 
-            onChange={e => setAgg(e.target.value as Aggregation)} 
-            className="border border-gray-300 rounded-lg px-4 py-2 bg-white text-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            <option>DAY</option>
-            <option>MONTH</option>
-            <option>QUARTER</option>
-            <option>YEAR</option>
-          </select>
-          <div className="text-sm text-gray-500">Choose how to group chart data</div>
-        </div>
-      </div>
 
       {/* Month/Year selector and KPI cards */}
       <div className="bg-white rounded-xl shadow-lg p-6 mb-8 border border-gray-100">
@@ -198,6 +182,24 @@ export default function Dashboard() {
           gradient="from-yellow-500 to-yellow-600"
           textColor="text-yellow-50"
         />
+      </div>
+
+      {/* Chart Aggregation Selector */}
+      <div className="bg-white rounded-xl shadow-lg p-4 mb-6 border border-gray-100">
+        <div className="flex items-center gap-4">
+          <label className="text-sm font-medium text-gray-700">📊 Chart Aggregation:</label>
+          <select 
+            value={agg} 
+            onChange={e => setAgg(e.target.value as Aggregation)} 
+            className="border border-gray-300 rounded-lg px-4 py-2 bg-white text-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            <option>DAY</option>
+            <option>MONTH</option>
+            <option>QUARTER</option>
+            <option>YEAR</option>
+          </select>
+          <div className="text-sm text-gray-500">Choose how to group chart data</div>
+        </div>
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">
