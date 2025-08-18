@@ -268,8 +268,9 @@ public class SkuGroupService {
      * Get ungrouped SKUs
      */
     public List<String> getUngroupedSkus() {
-        var allSkus = orderRepository.findAll().stream()
-                .map(OrderEntity::getSku)
+        var allSkus = mergedOrderRepository.findAll().stream()
+                .map(MergedOrderPaymentEntity::getSkuId)
+                .filter(Objects::nonNull)
                 .distinct()
                 .collect(Collectors.toSet());
         
