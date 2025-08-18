@@ -320,62 +320,36 @@ public class ExcelImportService {
                     
                     // Get all additional payment fields
                     String transactionId = clamp(getCellAny(row, hmap, List.of("Transaction ID", "Transaction Id"), null), "transaction_id");
-                    String finalSettlementAmountStr = getCellAny(row, hmap, List.of("Final Settlement Amount", "Net Settlement Amount"), null);
-                    BigDecimal finalSettlementAmount = parseBigDecimal(finalSettlementAmountStr);
+                    BigDecimal finalSettlementAmount = parseBigDecimal(getCellAny(row, hmap, List.of("Final Settlement Amount", "Net Settlement Amount"), null));
                     String priceType = clamp(getCellAny(row, hmap, List.of("Price Type"), null), "price_type");
-                    String totalSaleAmountStr = getCellAny(row, hmap, List.of("Total Sale Amount (Incl. Shipping & GST)"), null);
-                    BigDecimal totalSaleAmount = parseBigDecimal(totalSaleAmountStr);
-                    String totalSaleReturnAmountStr = getCellAny(row, hmap, List.of("Total Sale Return Amount (Incl. Shipping & GST)"), null);
-                    BigDecimal totalSaleReturnAmount = parseBigDecimal(totalSaleReturnAmountStr);
-                    String fixedFeeStr = getCellAny(row, hmap, List.of("Fixed Fee (Incl. GST)"), null);
-                    BigDecimal fixedFee = parseBigDecimal(fixedFeeStr);
-                    String warehousingFeeStr = getCellAny(row, hmap, List.of("Warehousing fee (Incl. GST)"), null);
-                    BigDecimal warehousingFee = parseBigDecimal(warehousingFeeStr);
-                    String returnPremiumStr = getCellAny(row, hmap, List.of("Return premium (Incl. GST)", "Return premium (Incl. GST) of Return"), null);
-                    BigDecimal returnPremium = parseBigDecimal(returnPremiumStr);
-                    String meeshoCommissionPercentageStr = getCellAny(row, hmap, List.of("Meesho Commission Percentage"), null);
-                    BigDecimal meeshoCommissionPercentage = parseBigDecimal(meeshoCommissionPercentageStr);
-                    String meeshoCommissionStr = getCellAny(row, hmap, List.of("Meesho Commission (Incl. GST)"), null);
-                    BigDecimal meeshoCommission = parseBigDecimal(meeshoCommissionStr);
-                    String meeshoGoldPlatformFeeStr = getCellAny(row, hmap, List.of("Meesho gold platform fee (Incl. GST)"), null);
-                    BigDecimal meeshoGoldPlatformFee = parseBigDecimal(meeshoGoldPlatformFeeStr);
-                    String meeshoMallPlatformFeeStr = getCellAny(row, hmap, List.of("Meesho mall platform fee (Incl. GST)"), null);
-                    BigDecimal meeshoMallPlatformFee = parseBigDecimal(meeshoMallPlatformFeeStr);
-                    String returnShippingChargeStr = getCellAny(row, hmap, List.of("Return Shipping Charge (Incl. GST)"), null);
-                    BigDecimal returnShippingCharge = parseBigDecimal(returnShippingChargeStr);
-                    String gstCompensationStr = getCellAny(row, hmap, List.of("GST Compensation (PRP Shipping)"), null);
-                    BigDecimal gstCompensation = parseBigDecimal(gstCompensationStr);
-                    String shippingChargeStr = getCellAny(row, hmap, List.of("Shipping Charge (Incl. GST)"), null);
-                    BigDecimal shippingCharge = parseBigDecimal(shippingChargeStr);
-                    String otherSupportServiceChargesStr = getCellAny(row, hmap, List.of("Other Support Service Charges (Excl. GST)"), null);
-                    BigDecimal otherSupportServiceCharges = parseBigDecimal(otherSupportServiceChargesStr);
-                    String waiversStr = getCellAny(row, hmap, List.of("Waivers (Excl. GST)"), null);
-                    BigDecimal waivers = parseBigDecimal(waiversStr);
-                    String netOtherSupportServiceChargesStr = getCellAny(row, hmap, List.of("Net Other Support Service Charges (Excl. GST)"), null);
-                    BigDecimal netOtherSupportServiceCharges = parseBigDecimal(netOtherSupportServiceChargesStr);
-                    String gstOnNetOtherSupportServiceChargesStr = getCellAny(row, hmap, List.of("GST on Net Other Support Service Charges"), null);
-                    BigDecimal gstOnNetOtherSupportServiceCharges = parseBigDecimal(gstOnNetOtherSupportServiceChargesStr);
-                    String tcsStr = getCellAny(row, hmap, List.of("TCS"), null);
-                    BigDecimal tcs = parseBigDecimal(tcsStr);
-                    String tdsRatePercentageStr = getCellAny(row, hmap, List.of("TDS Rate %"), null);
-                    BigDecimal tdsRatePercentage = parseBigDecimal(tdsRatePercentageStr);
-                    String tdsStr = getCellAny(row, hmap, List.of("TDS"), null);
-                    BigDecimal tds = parseBigDecimal(tdsStr);
-                    String compensationStr = getCellAny(row, hmap, List.of("Compensation"), null);
-                    BigDecimal compensation = parseBigDecimal(compensationStr);
-                    String claimsStr = getCellAny(row, hmap, List.of("Claims"), null);
-                    BigDecimal claims = parseBigDecimal(claimsStr);
-                    String recoveryStr = getCellAny(row, hmap, List.of("Recovery"), null);
-                    BigDecimal recovery = parseBigDecimal(recoveryStr);
+                    BigDecimal totalSaleAmount = parseBigDecimal(getCellAny(row, hmap, List.of("Total Sale Amount (Incl. Shipping & GST)"), null));
+                    BigDecimal totalSaleReturnAmount = parseBigDecimal(getCellAny(row, hmap, List.of("Total Sale Return Amount (Incl. Shipping & GST)"), null));
+                    BigDecimal fixedFee = parseBigDecimal(getCellAny(row, hmap, List.of("Fixed Fee (Incl. GST)"), null));
+                    BigDecimal warehousingFee = parseBigDecimal(getCellAny(row, hmap, List.of("Warehousing fee (Incl. GST)"), null));
+                    BigDecimal returnPremium = parseBigDecimal(getCellAny(row, hmap, List.of("Return premium (Incl. GST)", "Return premium (Incl. GST) of Return"), null));
+                    BigDecimal meeshoCommissionPercentage = parseBigDecimal(getCellAny(row, hmap, List.of("Meesho Commission Percentage"), null));
+                    BigDecimal meeshoCommission = parseBigDecimal(getCellAny(row, hmap, List.of("Meesho Commission (Incl. GST)"), null));
+                    BigDecimal meeshoGoldPlatformFee = parseBigDecimal(getCellAny(row, hmap, List.of("Meesho gold platform fee (Incl. GST)"), null));
+                    BigDecimal meeshoMallPlatformFee = parseBigDecimal(getCellAny(row, hmap, List.of("Meesho mall platform fee (Incl. GST)"), null));
+                    BigDecimal returnShippingCharge = parseBigDecimal(getCellAny(row, hmap, List.of("Return Shipping Charge (Incl. GST)"), null));
+                    BigDecimal gstCompensation = parseBigDecimal(getCellAny(row, hmap, List.of("GST Compensation (PRP Shipping)"), null));
+                    BigDecimal shippingCharge = parseBigDecimal(getCellAny(row, hmap, List.of("Shipping Charge (Incl. GST)"), null));
+                    BigDecimal otherSupportServiceCharges = parseBigDecimal(getCellAny(row, hmap, List.of("Other Support Service Charges (Excl. GST)"), null));
+                    BigDecimal waivers = parseBigDecimal(getCellAny(row, hmap, List.of("Waivers (Excl. GST)"), null));
+                    BigDecimal netOtherSupportServiceCharges = parseBigDecimal(getCellAny(row, hmap, List.of("Net Other Support Service Charges (Excl. GST)"), null));
+                    BigDecimal gstOnNetOtherSupportServiceCharges = parseBigDecimal(getCellAny(row, hmap, List.of("GST on Net Other Support Service Charges"), null));
+                    BigDecimal tcs = parseBigDecimal(getCellAny(row, hmap, List.of("TCS"), null));
+                    BigDecimal tdsRatePercentage = parseBigDecimal(getCellAny(row, hmap, List.of("TDS Rate %"), null));
+                    BigDecimal tds = parseBigDecimal(getCellAny(row, hmap, List.of("TDS"), null));
+                    BigDecimal compensation = parseBigDecimal(getCellAny(row, hmap, List.of("Compensation"), null));
+                    BigDecimal claims = parseBigDecimal(getCellAny(row, hmap, List.of("Claims"), null));
+                    BigDecimal recovery = parseBigDecimal(getCellAny(row, hmap, List.of("Recovery"), null));
                     String compensationReason = clamp(getCellAny(row, hmap, List.of("Compensation Reason"), null), "compensation_reason");
                     String claimsReason = clamp(getCellAny(row, hmap, List.of("Claims Reason"), null), "claims_reason");
                     String recoveryReason = clamp(getCellAny(row, hmap, List.of("Recovery Reason"), null), "recovery_reason");
-                    String dispatchDateStr = getCellAny(row, hmap, List.of("Dispatch Date"), null);
-                    LocalDate dispatchDate = parseToLocalDate(dispatchDateStr);
-                    String productGstPercentageStr = getCellAny(row, hmap, List.of("Product GST %"), null);
-                    BigDecimal productGstPercentage = parseBigDecimal(productGstPercentageStr);
-                    String listingPriceInclTaxesStr = getCellAny(row, hmap, List.of("Listing Price (Incl. taxes)"), null);
-                    BigDecimal listingPriceInclTaxes = parseBigDecimal(listingPriceInclTaxesStr);
+                    LocalDate dispatchDate = parseToLocalDate(getCellAny(row, hmap, List.of("Dispatch Date"), null));
+                    BigDecimal productGstPercentage = parseBigDecimal(getCellAny(row, hmap, List.of("Product GST %"), null));
+                    BigDecimal listingPriceInclTaxes = parseBigDecimal(getCellAny(row, hmap, List.of("Listing Price (Incl. taxes)"), null));
                     
                     // Enrich with order SKU and order date
                     String skuForOrder = null;
@@ -404,16 +378,17 @@ public class ExcelImportService {
                         }
                     }
                     
-                    toSave.add(PaymentEntity.builder()
+                    // Build entity: set both amount and finalSettlementAmount
+                    PaymentEntity entity = PaymentEntity.builder()
                             .paymentId(paymentId)
                             .orderId(orderId)
                             .sku(skuForOrder)
                             .amount(amount)
+                            .finalSettlementAmount(finalSettlementAmount != null ? finalSettlementAmount : amount)
                             .paymentDateTime(date != null ? date.atStartOfDay() : null)
                             .orderDateTime(orderDateTimeVal)
                             .orderStatus(orderStatus)
                             .transactionId(transactionId)
-                            .amount(finalSettlementAmount)
                             .priceType(priceType)
                             .totalSaleAmount(totalSaleAmount)
                             .totalSaleReturnAmount(totalSaleReturnAmount)
@@ -443,7 +418,9 @@ public class ExcelImportService {
                             .dispatchDate(dispatchDate)
                             .productGstPercentage(productGstPercentage)
                             .listingPriceInclTaxes(listingPriceInclTaxes)
-                            .build());
+                            .build();
+
+                    toSave.add(entity);
                 }
                 
                 log.info("Row processing summary: Total processed={}, Valid rows={}, Skipped rows={}, Entities to save={}", 
@@ -463,12 +440,12 @@ public class ExcelImportService {
                             // Update all fields
                             existing.setPaymentId(payment.getPaymentId());
                             existing.setAmount(payment.getAmount());
+                            existing.setFinalSettlementAmount(payment.getFinalSettlementAmount());
                             existing.setPaymentDateTime(payment.getPaymentDateTime());
                             existing.setOrderDateTime(payment.getOrderDateTime());
                             existing.setOrderStatus(payment.getOrderStatus());
                             existing.setSku(payment.getSku());
                             existing.setTransactionId(payment.getTransactionId());
-                            existing.setAmount(payment.getAmount());
                             existing.setPriceType(payment.getPriceType());
                             existing.setTotalSaleAmount(payment.getTotalSaleAmount());
                             existing.setTotalSaleReturnAmount(payment.getTotalSaleReturnAmount());
@@ -731,11 +708,11 @@ public class ExcelImportService {
                         .orderId(orderId)
                         .sku(skuForOrder)
                         .amount(amount)
+                        .finalSettlementAmount(finalSettlementAmount != null ? finalSettlementAmount : amount)
                         .paymentDateTime(date != null ? date.atStartOfDay() : null)
                         .orderDateTime(orderDateTimeVal)
                         .orderStatus(orderStatus)
                         .transactionId(transactionId)
-                        .amount(finalSettlementAmount)
                         .priceType(priceType)
                         .totalSaleAmount(totalSaleAmount)
                         .totalSaleReturnAmount(totalSaleReturnAmount)

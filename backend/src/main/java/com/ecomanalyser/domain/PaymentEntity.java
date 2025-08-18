@@ -28,9 +28,13 @@ public class PaymentEntity {
     @Column(name = "sku")
     private String sku;
 
-    // Map amount to final_settlement_amount (existing column)
-    @Column(name = "final_settlement_amount", precision = 12, scale = 2)
+    // Legacy amount column (NOT NULL in DB)
+    @Column(name = "amount", precision = 12, scale = 2)
     private BigDecimal amount;
+
+    // Final settlement amount column
+    @Column(name = "final_settlement_amount", precision = 12, scale = 2)
+    private BigDecimal finalSettlementAmount;
 
     @Column(name = "payment_date_time", nullable = false)
     private LocalDateTime paymentDateTime;
