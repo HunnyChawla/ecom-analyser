@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import { 
   Download, 
   Search, 
@@ -13,8 +12,7 @@ import {
   XCircle,
   AlertTriangle
 } from 'lucide-react';
-
-const api = axios.create({ baseURL: 'http://localhost:8080' });
+import { api } from '../utils/api';
 
 interface MergedOrderData {
   orderId: string;
