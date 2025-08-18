@@ -146,6 +146,9 @@ public class ExcelImportService {
                     BigDecimal supplierDiscountedPrice = parseBigDecimal(supplierDiscountedPriceStr);
                     String packetId = getCellAny(row, hmap, List.of("Packet Id", "Packet ID"), null);
                     String reasonForCreditEntry = getCellAny(row, hmap, List.of("Reason for Credit Entry", "Credit Entry Reason"), null);
+                    if (reasonForCreditEntry != null) {
+                        reasonForCreditEntry = reasonForCreditEntry.toUpperCase();
+                    }
                     
                     toSave.add(OrderEntity.builder()
                             .orderId(orderId)
@@ -283,6 +286,9 @@ public class ExcelImportService {
 
                     String orderStatus = clamp(getCellAny(row, hmap, List.of("Live Order Status", "Order Status", "Status"), null), "order_status");
                     if (orderStatus == null || orderStatus.isBlank()) { orderStatus = "UNKNOWN"; warn("Row " + r + " (" + orderId + "): Missing order status; set to UNKNOWN"); }
+                    if (orderStatus != null && !orderStatus.equals("UNKNOWN")) {
+                        orderStatus = orderStatus.toUpperCase();
+                    }
 
                     String transactionId = clamp(getCellAny(row, hmap, List.of("Transaction ID", "Transaction Id"), null), "transaction_id");
                     if (transactionId == null || transactionId.isBlank()) { transactionId = paymentId; warn("Row " + r + " (" + orderId + "): Missing transaction id; using payment id as fallback"); }
@@ -525,6 +531,9 @@ public class ExcelImportService {
                 BigDecimal supplierDiscountedPrice = parseBigDecimal(supplierDiscountedPriceStr);
                 String packetId = getAny(r, headerMap, List.of("packet id", "packet id"), 10);
                 String reasonForCreditEntry = getAny(r, headerMap, List.of("reason for credit entry", "credit entry reason"), 11);
+                if (reasonForCreditEntry != null) {
+                    reasonForCreditEntry = reasonForCreditEntry.toUpperCase();
+                }
                 
                 toSave.add(OrderEntity.builder()
                         .orderId(orderId)
@@ -594,6 +603,9 @@ public class ExcelImportService {
                 if (date == null) { date = LocalDate.now(); warn("CSV: orderId=" + orderId + ": Payment date missing/invalid; set to today"); }
                 String orderStatus = clamp(getAny(r, headerMap, List.of("live order status", "order status", "status"), 4), "order_status");
                 if (orderStatus == null || orderStatus.isBlank()) { orderStatus = "UNKNOWN"; warn("CSV: orderId=" + orderId + ": Missing order status; set to UNKNOWN"); }
+                if (orderStatus != null && !orderStatus.equals("UNKNOWN")) {
+                    orderStatus = orderStatus.toUpperCase();
+                }
 
                 String transactionId = clamp(getAny(r, headerMap, List.of("transaction id", "transaction"), null), "transaction_id");
                 if (transactionId == null || transactionId.isBlank()) { transactionId = paymentId; warn("CSV: orderId=" + orderId + ": Missing transaction id; using payment id as fallback"); }
