@@ -45,6 +45,19 @@ public class ExcelImportService {
     private final PaymentRepository paymentRepository;
     private final SkuPriceRepository skuPriceRepository;
 
+    // Collect per-request import warnings (thread-local for web requests)
+    private final ThreadLocal<java.util.List<String>> importWarnings = ThreadLocal.withInitial(java.util.ArrayList::new);
+
+    private void warn(String message) {
+        importWarnings.get().add(message);
+    }
+
+    public java.util.List<String> consumeWarnings() {
+        var list = new java.util.ArrayList<>(importWarnings.get());
+        importWarnings.get().clear();
+        return list;
+    }
+
     @Transactional
     public int importOrders(MultipartFile file) throws Exception {
         log.info("Starting order import for file: {}", file.getOriginalFilename());
@@ -53,6 +66,8 @@ public class ExcelImportService {
             return importOrdersCsv(file);
         } else {
             log.info("Detected Excel file, using Excel parser");
+            // Reset warnings for this run
+            importWarnings.get().clear();
             List<OrderEntity> toSave = new ArrayList<>();
             try (InputStream is = file.getInputStream(); Workbook wb = new XSSFWorkbook(is)) {
                 Sheet sheet = wb.getSheetAt(0);
@@ -73,25 +88,40 @@ public class ExcelImportService {
                     if (row == null) continue;
                     
                     String orderId = getCellAny(row, hmap, List.of("Sub Order No", "Order Id", "Order ID", "Sub Order"), null);
-                    if (orderId.isBlank()) continue;
+                    if (orderId == null || orderId.isBlank()) {
+                        orderId = "UNKNOWN-" + System.currentTimeMillis() + "-" + r;
+                        warn("Row " + r + ": Missing orderId; generated " + orderId);
+                    }
                     
                     String sku = getCellAny(row, hmap, List.of("SKU", "Supplier SKU", "Product SKU"), null);
-                    if (sku.isBlank()) continue;
+                    if (sku == null || sku.isBlank()) {
+                        sku = "UNKNOWN";
+                        warn("Row " + r + " (" + orderId + "): Missing SKU; set to UNKNOWN");
+                    }
                     
                     String qtyStr = getCellAny(row, hmap, List.of("Quantity", "Qty"), null);
                     int qty = parseIntFlexible(qtyStr);
-                    if (qty <= 0) continue;
+                    if (qty <= 0) {
+                        warn("Row " + r + " (" + orderId + "): Quantity invalid; set to 0");
+                        qty = 0;
+                    }
                     
                     String priceStr = getCellAny(row, hmap, List.of("Supplier Discounted Price (Incl GST and Commision)",
                             "Supplier Discounted Price (Incl GST and Commission)",
                             "Supplier Listed Price (Incl. GST + Commission)",
                             "Listing Price", "Unit Price", "Price"), null);
                     BigDecimal price = parseBigDecimal(priceStr);
-                    if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) continue;
+                    if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) {
+                        warn("Row " + r + " (" + orderId + "): Selling price missing/invalid; set to 0");
+                        price = BigDecimal.ZERO;
+                    }
                     
                     String dateStr = getCellAny(row, hmap, List.of("Order Date", "Date", "OrderDate"), null);
                     LocalDate date = parseToLocalDate(dateStr);
-                    if (date == null) continue;
+                    if (date == null) {
+                        warn("Row " + r + " (" + orderId + "): Order date missing/invalid; set to today");
+                        date = LocalDate.now();
+                    }
                     
                     // Get all additional fields
                     String productName = getCellAny(row, hmap, List.of("Product Name", "Product"), null);
@@ -169,6 +199,8 @@ public class ExcelImportService {
             return importPaymentsCsv(file);
         } else {
             log.info("Detected Excel file, using Excel parser");
+            // Reset warnings for this run
+            importWarnings.get().clear();
             List<PaymentEntity> toSave = new ArrayList<>();
             try (InputStream is = file.getInputStream(); Workbook wb = new XSSFWorkbook(is)) {
                 // Look for the "Order Payments" sheet specifically
@@ -230,10 +262,9 @@ public class ExcelImportService {
                     }
                     
                     String orderId = getCellAny(row, hmap, List.of("Sub Order No", "Order Id", "Order ID", "Sub Order"), null);
-                    if (orderId.isBlank()) {
-                        skippedRows++;
-                        log.debug("Row {}: Skipping row with blank orderId", r);
-                        continue;
+                    if (orderId == null || orderId.isBlank()) {
+                        orderId = "UNKNOWN-" + System.currentTimeMillis() + "-" + r;
+                        warn("Row " + r + ": Missing orderId; generated " + orderId);
                     }
                     
                     String paymentId = getCellAny(row, hmap, List.of("Transaction ID", "Payment Id", "Payment ID", "Transaction"), null);
@@ -244,7 +275,7 @@ public class ExcelImportService {
                     String amtStr = getCellAny(row, hmap, List.of("Final Settlement Amount", "Net Settlement Amount", "Amount"), null);
                     String dateStr = getCellAny(row, hmap, List.of("Payment Date", "Settlement Date", "Date"), null);
                     
-                    if (amtStr.isBlank() && dateStr.isBlank()) {
+                    if ((amtStr == null || amtStr.isBlank()) && (dateStr == null || dateStr.isBlank())) {
                         skippedRows++;
                         log.debug("Row {}: Skipping row with blank amount and date", r);
                         continue; // likely an empty row
@@ -256,11 +287,10 @@ public class ExcelImportService {
                     // Get order status from column F (Live Order Status)
                     String orderStatus = getCellAny(row, hmap, List.of("Live Order Status", "Order Status", "Status"), null);
                     
-                    // Validate that order status is not null or blank
+                    // Do not skip for missing order status; default and warn
                     if (orderStatus == null || orderStatus.isBlank()) {
-                        skippedRows++;
-                        log.warn("Row {}: Skipping row with null/blank order status", r);
-                        continue;
+                        orderStatus = "UNKNOWN";
+                        warn("Row " + r + " (" + orderId + "): Missing order status; set to UNKNOWN");
                     }
                     
                     validRows++;
