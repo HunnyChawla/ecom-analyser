@@ -44,6 +44,7 @@ public class ExcelImportService {
     private final OrderRepository orderRepository;
     private final PaymentRepository paymentRepository;
     private final SkuPriceRepository skuPriceRepository;
+    private final DataMergeService dataMergeService;
 
     // Collect per-request import warnings (thread-local for web requests)
     private final ThreadLocal<java.util.List<String>> importWarnings = ThreadLocal.withInitial(java.util.ArrayList::new);
@@ -196,6 +197,12 @@ public class ExcelImportService {
             }
             
             log.info("Successfully saved {} order entities", savedCount);
+            // Trigger merged table rebuild after orders upload
+            try {
+                dataMergeService.rebuildMergedTable();
+            } catch (Exception e) {
+                log.warn("Failed to rebuild merged_orders after orders upload: {}", e.getMessage());
+            }
             return savedCount;
         }
     }
@@ -442,6 +449,12 @@ public class ExcelImportService {
                 }
 
                 log.info("Successfully processed {} payment entities", savedCount);
+                // Trigger merged table rebuild after payments upload
+                try {
+                    dataMergeService.rebuildMergedTable();
+                } catch (Exception e) {
+                    log.warn("Failed to rebuild merged_orders after payments upload: {}", e.getMessage());
+                }
                 return savedCount;
             }
         }

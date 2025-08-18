@@ -347,44 +347,107 @@ public class DataMergeService {
      * Rebuild merged table from current orders and payments
      */
     public int rebuildMergedTable() {
-        List<MergedOrderData> merged = mergeOrdersAndPayments();
-        // keep only one record per orderId: prefer the one with latest payment date
-        Map<String, MergedOrderData> latestPerOrder = new HashMap<>();
-        for (MergedOrderData m : merged) {
-            MergedOrderData prev = latestPerOrder.get(m.getOrderId());
-            if (prev == null) {
-                latestPerOrder.put(m.getOrderId(), m);
-            } else {
-                LocalDateTime pdPrev = prev.getPaymentDateTime();
-                LocalDateTime pdCurr = m.getPaymentDateTime();
-                if (pdPrev == null || (pdCurr != null && pdCurr.isAfter(pdPrev))) {
-                    latestPerOrder.put(m.getOrderId(), m);
+        log.info("Rebuilding merged_orders with aggregation and status priority rules...");
+
+        // Load all orders and payments
+        List<OrderEntity> orders = orderRepository.findAll();
+        List<PaymentEntity> payments = paymentRepository.findAll();
+
+        Map<String, OrderEntity> orderById = orders.stream()
+                .collect(Collectors.toMap(OrderEntity::getOrderId, o -> o));
+
+        Map<String, List<PaymentEntity>> paymentsByOrder = payments.stream()
+                .collect(Collectors.groupingBy(PaymentEntity::getOrderId));
+
+        // All orderIds from either side
+        Set<String> allOrderIds = new HashSet<>();
+        allOrderIds.addAll(orderById.keySet());
+        allOrderIds.addAll(paymentsByOrder.keySet());
+
+        List<MergedOrderPaymentEntity> toPersist = new ArrayList<>(allOrderIds.size());
+
+        for (String orderId : allOrderIds) {
+            OrderEntity order = orderById.get(orderId);
+            List<PaymentEntity> orderPayments = paymentsByOrder.getOrDefault(orderId, Collections.emptyList());
+
+            // Aggregate settlement amount across all payment rows for this order
+            BigDecimal settlementSum = orderPayments.stream()
+                    .map(p -> p.getFinalSettlementAmount() != null ? p.getFinalSettlementAmount() : p.getAmount())
+                    .filter(Objects::nonNull)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            // Choose latest payment by paymentDateTime
+            PaymentEntity latestPayment = orderPayments.stream()
+                    .filter(p -> p.getPaymentDateTime() != null)
+                    .max(Comparator.comparing(PaymentEntity::getPaymentDateTime))
+                    .orElse(null);
+
+            // Resolve status from payments first: pick first non-blank status scanning by most recent first
+            String resolvedStatus = null;
+            if (!orderPayments.isEmpty()) {
+                List<PaymentEntity> sorted = new ArrayList<>(orderPayments);
+                sorted.sort(Comparator.comparing(PaymentEntity::getPaymentDateTime, Comparator.nullsLast(Comparator.naturalOrder())).reversed());
+                for (PaymentEntity p : sorted) {
+                    if (p.getOrderStatus() != null && !p.getOrderStatus().isBlank()) {
+                        resolvedStatus = p.getOrderStatus();
+                        break;
+                    }
                 }
             }
-        }
-        mergedRepo.deleteAllInBatch();
-        List<MergedOrderPaymentEntity> entities = new ArrayList<>();
-        for (MergedOrderData m : latestPerOrder.values()) {
-            BigDecimal orderAmount = (m.getSellingPrice() != null && m.getQuantity() != null)
-                    ? m.getSellingPrice().multiply(BigDecimal.valueOf(m.getQuantity()))
+            if (resolvedStatus == null) {
+                // Fall back to order's status if available (using reasonForCreditEntry as status surrogate)
+                if (order != null && order.getReasonForCreditEntry() != null && !order.getReasonForCreditEntry().isBlank()) {
+                    resolvedStatus = order.getReasonForCreditEntry();
+                } else {
+                    resolvedStatus = "UNKNOWN";
+                }
+            }
+
+            // Compute other fields
+            BigDecimal orderAmount = null;
+            Integer quantity = null;
+            String sku = null;
+            String state = null;
+            LocalDate orderDate = null;
+            if (order != null) {
+                quantity = order.getQuantity();
+                sku = order.getSku();
+                state = order.getCustomerState();
+                orderDate = order.getOrderDateTime() != null ? order.getOrderDateTime().toLocalDate() : null;
+                if (order.getSellingPrice() != null && order.getQuantity() != null) {
+                    orderAmount = order.getSellingPrice().multiply(BigDecimal.valueOf(order.getQuantity()));
+                }
+            }
+
+            LocalDate paymentDate = latestPayment != null && latestPayment.getPaymentDateTime() != null
+                    ? latestPayment.getPaymentDateTime().toLocalDate()
                     : null;
-            entities.add(MergedOrderPaymentEntity.builder()
-                    .orderId(m.getOrderId())
+            String transactionId = latestPayment != null && latestPayment.getTransactionId() != null && !latestPayment.getTransactionId().isBlank()
+                    ? latestPayment.getTransactionId()
+                    : orderPayments.stream().map(PaymentEntity::getTransactionId).filter(Objects::nonNull).filter(s -> !s.isBlank()).findFirst().orElse(null);
+            String priceType = latestPayment != null ? latestPayment.getPriceType() : null;
+            LocalDate dispatchDate = latestPayment != null ? latestPayment.getDispatchDate() : null;
+
+            toPersist.add(MergedOrderPaymentEntity.builder()
+                    .orderId(orderId)
                     .orderAmount(orderAmount)
-                    .settlementAmount(m.getFinalSettlementAmount() != null ? m.getFinalSettlementAmount() : m.getAmount())
-                    .orderStatus(m.getFinalStatus() != null ? m.getFinalStatus() : m.getOrderStatus())
-                    .skuId(m.getSku())
-                    .orderDate(m.getOrderDateTime() != null ? m.getOrderDateTime().toLocalDate() : null)
-                    .paymentDate(m.getPaymentDateTime() != null ? m.getPaymentDateTime().toLocalDate() : null)
-                    .quantity(m.getQuantity())
-                    .state(m.getCustomerState())
-                    .transactionId(m.getTransactionId())
-                    .dispatchDate(m.getDispatchDate())
-                    .priceType(m.getPriceType())
+                    .settlementAmount(settlementSum)
+                    .orderStatus(resolvedStatus)
+                    .skuId(sku)
+                    .orderDate(orderDate)
+                    .paymentDate(paymentDate)
+                    .quantity(quantity)
+                    .state(state)
+                    .transactionId(transactionId)
+                    .dispatchDate(dispatchDate)
+                    .priceType(priceType)
                     .build());
         }
-        mergedRepo.saveAll(entities);
-        return entities.size();
+
+        mergedRepo.deleteAllInBatch();
+        mergedRepo.saveAll(toPersist);
+        log.info("Rebuilt merged_orders with {} rows", toPersist.size());
+        return toPersist.size();
     }
     
     /**
