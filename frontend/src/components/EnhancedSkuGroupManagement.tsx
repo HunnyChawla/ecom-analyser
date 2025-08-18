@@ -36,7 +36,7 @@ const EnhancedSkuGroupManagement: React.FC = () => {
   const [groups, setGroups] = useState<SkuGroup[]>([]);
   const [ungroupedSkus, setUngroupedSkus] = useState<string[]>([]);
   const [skuMappings, setSkuMappings] = useState<SkuMapping[]>([]);
-  const [activeTab, setActiveTab] = useState<'groups' | 'skus'>('groups');
+  const [activeTab, setActiveTab] = useState<'groups' | 'skus' | 'ungrouped'>('groups');
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
   
@@ -88,8 +88,12 @@ const EnhancedSkuGroupManagement: React.FC = () => {
 
   const fetchUngroupedSkus = async () => {
     try {
+      console.log('Fetching ungrouped SKUs...');
       const response = await api.get('/api/sku-groups/ungrouped');
-      setUngroupedSkus(Array.isArray(response.data?.ungroupedSkus) ? response.data.ungroupedSkus : []);
+      console.log('Ungrouped SKUs response:', response.data);
+      const skus = Array.isArray(response.data?.ungroupedSkus) ? response.data.ungroupedSkus : [];
+      console.log('Setting ungrouped SKUs:', skus);
+      setUngroupedSkus(skus);
     } catch (error) {
       console.error('Error fetching ungrouped SKUs:', error);
       setUngroupedSkus([]);
@@ -324,6 +328,45 @@ const EnhancedSkuGroupManagement: React.FC = () => {
         </div>
       </div>
 
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center">
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <Users className="w-5 h-5 text-blue-600" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600">Total Groups</p>
+              <p className="text-2xl font-semibold text-gray-900">{groups.length}</p>
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center">
+            <div className="p-2 bg-green-100 rounded-lg">
+              <Package className="w-5 h-5 text-green-600" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600">SKU Mappings</p>
+              <p className="text-2xl font-semibold text-gray-900">{skuMappings.length}</p>
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center">
+            <div className="p-2 bg-orange-100 rounded-lg">
+              <Package className="w-5 h-5 text-orange-600" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600">Ungrouped SKUs</p>
+              <p className="text-2xl font-semibold text-gray-900">{ungroupedSkus.length}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Tabs */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         <div className="border-b border-gray-200">
@@ -352,6 +395,19 @@ const EnhancedSkuGroupManagement: React.FC = () => {
               <div className="flex items-center space-x-2">
                 <Package className="w-4 h-4" />
                 <span>SKU Mappings ({skuMappings.length})</span>
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('ungrouped')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'ungrouped'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <Package className="w-4 h-4" />
+                <span>Ungrouped SKUs ({ungroupedSkus.length})</span>
               </div>
             </button>
           </nav>
@@ -438,6 +494,44 @@ const EnhancedSkuGroupManagement: React.FC = () => {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Ungrouped SKUs Tab */}
+          {activeTab === 'ungrouped' && (
+            <div className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-center">
+                  <Package className="w-5 h-5 text-blue-600 mr-2" />
+                  <div>
+                    <h3 className="text-sm font-medium text-blue-800">
+                      {ungroupedSkus.length} SKUs Available for Grouping
+                    </h3>
+                    <p className="text-sm text-blue-700 mt-1">
+                      These SKUs are not assigned to any group. Use the "Add SKU to Group" button to assign them.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {ungroupedSkus.map((sku) => (
+                  <div key={sku} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-gray-900 truncate">{sku}</span>
+                      <button
+                        onClick={() => {
+                          setSelectedSku(sku);
+                          setShowAddSkuModal(true);
+                        }}
+                        className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 transition-colors"
+                      >
+                        Add to Group
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
