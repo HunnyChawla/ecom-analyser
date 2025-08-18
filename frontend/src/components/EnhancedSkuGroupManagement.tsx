@@ -163,17 +163,33 @@ const EnhancedSkuGroupManagement: React.FC = () => {
     
     try {
       setLoading(true);
-      await api.post('/api/sku-groups/mappings', {
+      console.log('Adding SKU to group:', { selectedSku, selectedSkuGroup });
+      
+      const response = await api.post('/api/sku-groups/mappings', {
         skuId: selectedSku,
         groupId: selectedSkuGroup
       });
+      
+      console.log('Success response:', response.data);
       setSelectedSku('');
       setSelectedSkuGroup(0);
       setShowAddSkuModal(false);
-      fetchUngroupedSkus();
-      fetchSkuMappings();
-    } catch (error) {
+      await fetchUngroupedSkus();
+      await fetchSkuMappings();
+    } catch (error: any) {
       console.error('Error adding SKU to group:', error);
+      console.error('Error response:', error.response?.data);
+      console.error('Error status:', error.response?.status);
+      
+      // Check if it's an authentication error
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        console.error('Authentication/Authorization error detected');
+        // Don't clear the form on auth errors
+        return;
+      }
+      
+      // For other errors, show user feedback
+      alert(`Failed to add SKU to group: ${error.response?.data?.error || error.message}`);
     } finally {
       setLoading(false);
     }
@@ -364,6 +380,30 @@ const EnhancedSkuGroupManagement: React.FC = () => {
               <p className="text-2xl font-semibold text-gray-900">{ungroupedSkus.length}</p>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Debug Authentication Status */}
+      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-medium text-yellow-800">Debug: Authentication Status</h3>
+            <p className="text-sm text-yellow-700 mt-1">
+              Token: {localStorage.getItem('token') ? 'Present' : 'Missing'} | 
+              User: {localStorage.getItem('user') ? 'Present' : 'Missing'}
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              console.log('Token:', localStorage.getItem('token'));
+              console.log('User:', localStorage.getItem('user'));
+              console.log('Current groups:', groups);
+              console.log('Current ungrouped SKUs:', ungroupedSkus);
+            }}
+            className="text-xs bg-yellow-600 text-white px-2 py-1 rounded hover:bg-yellow-700 transition-colors"
+          >
+            Log Debug Info
+          </button>
         </div>
       </div>
 
