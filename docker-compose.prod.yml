@@ -2,7 +2,7 @@ version: '3.9'
 services:
   db:
     image: postgres:16-alpine
-    container_name: ecomanalyser_db
+    container_name: ecomanalyser_db_prod
     environment:
       POSTGRES_DB: ecomanalyser
       POSTGRES_USER: postgres
@@ -11,10 +11,12 @@ services:
       - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
+    restart: unless-stopped
+  
   backend:
     build:
       context: ./backend
-    container_name: ecomanalyser_backend
+    container_name: ecomanalyser_backend_prod
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/ecomanalyser
       SPRING_DATASOURCE_USERNAME: postgres
@@ -24,21 +26,18 @@ services:
       - "8080:8080"
     depends_on:
       - db
+    restart: unless-stopped
+  
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile.dev
-    container_name: ecomanalyser_frontend
+      dockerfile: Dockerfile
+    container_name: ecomanalyser_frontend_prod
     ports:
-      - "5173:5173"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    environment:
-      - CHOKIDAR_USEPOLLING=true
-      - WATCHPACK_POLLING=true
+      - "80:80"
     depends_on:
       - backend
+    restart: unless-stopped
+
 volumes:
   db_data:
-

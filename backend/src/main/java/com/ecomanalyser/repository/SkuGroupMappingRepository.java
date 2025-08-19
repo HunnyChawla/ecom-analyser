@@ -22,4 +22,7 @@ public interface SkuGroupMappingRepository extends JpaRepository<SkuGroupMapping
     
     @Query("SELECT COUNT(sgm) FROM SkuGroupMappingEntity sgm WHERE sgm.skuGroup.id = :groupId")
     Long countSkusByGroupId(@Param("groupId") Long groupId);
+    
+    @Query("SELECT sgm FROM SkuGroupMappingEntity sgm JOIN FETCH sgm.skuGroup WHERE sgm.skuGroup IS NOT NULL")
+    List<SkuGroupMappingEntity> findAllWithGroupDetails();
 }

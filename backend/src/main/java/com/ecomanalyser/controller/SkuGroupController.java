@@ -176,4 +176,132 @@ public class SkuGroupController {
                     .body(bytes);
         }
     }
+
+    /**
+     * Create a new SKU group
+     */
+    @PostMapping
+    public ResponseEntity<Map<String, Object>> createSkuGroup(@RequestBody Map<String, Object> request) {
+        try {
+            var group = skuGroupService.createSkuGroup(
+                (String) request.get("groupName"),
+                Double.parseDouble(request.get("purchasePrice").toString()),
+                (String) request.get("description")
+            );
+            return ResponseEntity.ok(Map.of(
+                "message", "SKU group created successfully",
+                "group", group
+            ));
+        } catch (Exception e) {
+            log.error("Error creating SKU group: {}", e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of(
+                "error", "Failed to create SKU group: " + e.getMessage()
+            ));
+        }
+    }
+
+    /**
+     * Update an existing SKU group
+     */
+    @PutMapping("/{id}")
+    public ResponseEntity<Map<String, Object>> updateSkuGroup(
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> request) {
+        try {
+            var group = skuGroupService.updateSkuGroup(
+                id,
+                (String) request.get("groupName"),
+                Double.parseDouble(request.get("purchasePrice").toString()),
+                (String) request.get("description")
+            );
+            return ResponseEntity.ok(Map.of(
+                "message", "SKU group updated successfully",
+                "group", group
+            ));
+        } catch (Exception e) {
+            log.error("Error updating SKU group: {}", e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of(
+                "error", "Failed to update SKU group: " + e.getMessage()
+            ));
+        }
+    }
+
+    /**
+     * Delete an SKU group
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Map<String, Object>> deleteSkuGroup(@PathVariable("id") Long id) {
+        try {
+            skuGroupService.deleteSkuGroup(id);
+            return ResponseEntity.ok(Map.of(
+                "message", "SKU group deleted successfully"
+            ));
+        } catch (Exception e) {
+            log.error("Error deleting SKU group: {}", e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of(
+                "error", "Failed to delete SKU group: " + e.getMessage()
+            ));
+        }
+    }
+
+    /**
+     * Get SKU mappings
+     */
+    @GetMapping("/mappings")
+    public ResponseEntity<List<Map<String, Object>>> getSkuMappings() {
+        try {
+            var mappings = skuGroupService.getSkuMappings();
+            // The service already returns the data in the correct format, no need to transform
+            return ResponseEntity.ok(mappings);
+        } catch (Exception e) {
+            log.error("Error getting SKU mappings: {}", e.getMessage());
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Add SKU to group
+     */
+    @PostMapping("/mappings")
+    public ResponseEntity<Map<String, Object>> addSkuToGroup(@RequestBody Map<String, Object> request) {
+        try {
+            var mapping = skuGroupService.addSkuToGroup(
+                (String) request.get("skuId"),
+                Long.parseLong(request.get("groupId").toString())
+            );
+            return ResponseEntity.ok(Map.of(
+                "message", "SKU added to group successfully",
+                "mapping", mapping
+            ));
+        } catch (Exception e) {
+            log.error("Error adding SKU to group: {}", e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of(
+                "error", "Failed to add SKU to group: " + e.getMessage()
+            ));
+        }
+    }
+
+    /**
+     * Update SKU group assignment
+     */
+    @PutMapping("/mappings/{skuId}")
+    public ResponseEntity<Map<String, Object>> updateSkuGroupAssignment(
+            @PathVariable String skuId,
+            @RequestBody Map<String, Object> request) {
+        try {
+            var mapping = skuGroupService.updateSkuGroupAssignment(
+                skuId,
+                Long.parseLong(request.get("groupId").toString())
+            );
+            return ResponseEntity.ok(Map.of(
+                "message", "SKU group assignment updated successfully",
+                "mapping", mapping
+            ));
+        } catch (Exception e) {
+            log.error("Error updating SKU group assignment: {}", e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of(
+                "error", "Failed to update SKU group assignment: " + e.getMessage()
+            ));
+        }
+    }
 }

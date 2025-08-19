@@ -268,8 +268,9 @@ public class SkuGroupService {
      * Get ungrouped SKUs
      */
     public List<String> getUngroupedSkus() {
-        var allSkus = orderRepository.findAll().stream()
-                .map(OrderEntity::getSku)
+        var allSkus = mergedOrderRepository.findAll().stream()
+                .map(MergedOrderPaymentEntity::getSkuId)
+                .filter(Objects::nonNull)
                 .distinct()
                 .collect(Collectors.toSet());
         
@@ -280,6 +281,123 @@ public class SkuGroupService {
         return allSkus.stream()
                 .filter(sku -> !groupedSkus.contains(sku))
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Create a new SKU group
+     */
+    @Transactional
+    public SkuGroupEntity createSkuGroup(String groupName, double purchasePrice, String description) {
+        SkuGroupEntity group = SkuGroupEntity.builder()
+                .groupName(groupName)
+                .purchasePrice(BigDecimal.valueOf(purchasePrice))
+                .description(description != null ? description : "")
+                .createdAt(LocalDateTime.now())
+                .build();
+        
+        return skuGroupRepository.save(group);
+    }
+
+    /**
+     * Update an existing SKU group
+     */
+    @Transactional
+    public SkuGroupEntity updateSkuGroup(Long id, String groupName, double purchasePrice, String description) {
+        SkuGroupEntity group = skuGroupRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("SKU group not found with id: " + id));
+        
+        group.setGroupName(groupName);
+        group.setPurchasePrice(BigDecimal.valueOf(purchasePrice));
+        group.setDescription(description != null ? description : "");
+        
+        return skuGroupRepository.save(group);
+    }
+
+    /**
+     * Delete an SKU group
+     */
+    @Transactional
+    public void deleteSkuGroup(Long id) {
+        // First delete all mappings for this group
+        List<SkuGroupMappingEntity> mappings = skuGroupMappingRepository.findBySkuGroupId(id);
+        skuGroupMappingRepository.deleteAll(mappings);
+        
+        // Then delete the group
+        skuGroupRepository.deleteById(id);
+    }
+
+    /**
+     * Get all SKU mappings
+     */
+    public List<Map<String, Object>> getSkuMappings() {
+        List<SkuGroupMappingEntity> mappings = skuGroupMappingRepository.findAllWithGroupDetails();
+        
+        return mappings.stream().map(mapping -> {
+            Map<String, Object> dto = new HashMap<>();
+            dto.put("id", mapping.getId());
+            dto.put("skuId", mapping.getSku());
+            dto.put("groupId", mapping.getSkuGroup().getId());
+            dto.put("groupName", mapping.getSkuGroup().getGroupName());
+            return dto;
+        }).collect(Collectors.toList());
+    }
+
+    /**
+     * Add SKU to group
+     */
+    @Transactional
+    public Map<String, Object> addSkuToGroup(String skuId, Long groupId) {
+        SkuGroupEntity group = skuGroupRepository.findById(groupId)
+                .orElseThrow(() -> new RuntimeException("SKU group not found with id: " + groupId));
+        
+        // Check if SKU is already mapped
+        Optional<SkuGroupMappingEntity> existingMapping = skuGroupMappingRepository.findBySku(skuId);
+        if (existingMapping.isPresent()) {
+            throw new RuntimeException("SKU " + skuId + " is already mapped to a group");
+        }
+        
+        SkuGroupMappingEntity mapping = SkuGroupMappingEntity.builder()
+                .sku(skuId)
+                .skuGroup(group)
+                .build();
+        
+        SkuGroupMappingEntity savedMapping = skuGroupMappingRepository.save(mapping);
+        
+        // Return a DTO to avoid lazy loading issues
+        Map<String, Object> result = new HashMap<>();
+        result.put("id", savedMapping.getId());
+        result.put("skuId", savedMapping.getSku());
+        result.put("groupId", savedMapping.getSkuGroup().getId());
+        result.put("groupName", savedMapping.getSkuGroup().getGroupName());
+        
+        return result;
+    }
+
+    /**
+     * Update SKU group assignment
+     */
+    @Transactional
+    public Map<String, Object> updateSkuGroupAssignment(String skuId, Long groupId) {
+        SkuGroupEntity group = skuGroupRepository.findById(groupId)
+                .orElseThrow(() -> new RuntimeException("SKU group not found with id: " + groupId));
+        
+        // Find existing mapping
+        SkuGroupMappingEntity existingMapping = skuGroupMappingRepository.findBySku(skuId)
+                .orElseThrow(() -> new RuntimeException("SKU mapping not found for: " + skuId));
+        
+        // Update the group
+        existingMapping.setSkuGroup(group);
+        
+        SkuGroupMappingEntity savedMapping = skuGroupMappingRepository.save(existingMapping);
+        
+        // Return a DTO to avoid lazy loading issues
+        Map<String, Object> result = new HashMap<>();
+        result.put("id", savedMapping.getId());
+        result.put("skuId", savedMapping.getSku());
+        result.put("groupId", savedMapping.getSkuGroup().getId());
+        result.put("groupName", savedMapping.getSkuGroup().getGroupName());
+        
+        return result;
     }
     
     // Helper methods
