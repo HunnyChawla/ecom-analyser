@@ -38,6 +38,7 @@ public class OrderRawEntity {
     private String validationErrors;
     
     @Column(name = "processed", nullable = false)
+    @Builder.Default
     private Boolean processed = false;
     
     @CreationTimestamp

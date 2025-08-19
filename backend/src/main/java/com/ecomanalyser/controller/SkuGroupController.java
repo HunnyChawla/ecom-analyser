@@ -251,15 +251,8 @@ public class SkuGroupController {
     public ResponseEntity<List<Map<String, Object>>> getSkuMappings() {
         try {
             var mappings = skuGroupService.getSkuMappings();
-            var result = mappings.stream().map(mapping -> {
-                Map<String, Object> map = new HashMap<>();
-                map.put("id", mapping.getId());
-                map.put("skuId", mapping.getSku());
-                map.put("groupName", mapping.getSkuGroup().getGroupName());
-                map.put("groupId", mapping.getSkuGroup().getId());
-                return map;
-            }).collect(Collectors.toList());
-            return ResponseEntity.ok(result);
+            // The service already returns the data in the correct format, no need to transform
+            return ResponseEntity.ok(mappings);
         } catch (Exception e) {
             log.error("Error getting SKU mappings: {}", e.getMessage());
             return ResponseEntity.internalServerError().build();
