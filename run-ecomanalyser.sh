@@ -160,15 +160,19 @@ show_status() {
     echo
     
     # Backend
-    if curl -s http://localhost:8080/actuator/health >/dev/null 2>&1; then
-        echo -e "⚙️  Backend API: ${GREEN}RUNNING${NC} (http://localhost:8080)"
+    if curl -s http://192.168.1.8:8080/api/auth/health >/dev/null 2>&1; then
+        echo -e "⚙️  Backend API: ${GREEN}RUNNING${NC}"
+        echo -e "  Local: http://localhost:8080"
+        echo -e "  Network: http://192.168.1.8:8080"
     else
         echo -e "⚙️  Backend API: ${RED}STOPPED${NC}"
     fi
     
     # Frontend
-    if curl -s http://localhost:5173 >/dev/null 2>&1; then
-        echo -e "🌐 Frontend: ${GREEN}RUNNING${NC} (http://localhost:5173)"
+    if curl -s http://192.168.1.8:5173 >/dev/null 2>&1; then
+        echo -e "🌐 Frontend: ${GREEN}RUNNING${NC}"
+        echo -e "  Local: http://localhost:5173"
+        echo -e "  Network: http://192.168.1.8:5173"
     else
         echo -e "🌐 Frontend: ${RED}STOPPED${NC}"
     fi
@@ -270,8 +274,12 @@ main() {
             wait_for_services
             show_status
             print_success "EcomAnalyser is now running!"
-            print_status "Access the application at: http://localhost:5173"
-            print_status "Backend API at: http://localhost:8080"
+            print_status "Access the application at:"
+            print_status "  Local: http://localhost:5173"
+            print_status "  Network: http://192.168.1.8:5173"
+            print_status "Backend API at:"
+            print_status "  Local: http://localhost:8080"
+            print_status "  Network: http://192.168.1.8:8080"
             print_status "Use '$0 status' to check service status"
             print_status "Use '$0 stop' to stop all services"
             ;;
