@@ -1,7 +1,18 @@
 import axios from 'axios';
 
+// Get API URL from environment or use default
+const getApiUrl = () => {
+  // Check if we're in development mode
+  if (import.meta.env.DEV) {
+    // In development, use the local IP for network access
+    return 'http://192.168.1.8:8080';
+  }
+  // In production, use environment variable or default
+  return import.meta.env.VITE_API_URL || 'http://192.168.1.8:8080';
+};
+
 const api = axios.create({ 
-  baseURL: 'http://localhost:8080',
+  baseURL: getApiUrl(),
   headers: {
     'Content-Type': 'application/json',
   },

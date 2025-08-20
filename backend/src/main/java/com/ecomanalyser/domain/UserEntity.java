@@ -35,6 +35,9 @@ public class UserEntity implements UserDetails {
     @Column(nullable = false)
     private String lastName;
     
+    @Column(nullable = false, unique = true)
+    private String gstNumber;
+    
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role;

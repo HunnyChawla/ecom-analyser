@@ -6,6 +6,9 @@ import { api } from '../utils/api';
 interface LoginForm {
   email: string;
   password: string;
+  firstName?: string;
+  lastName?: string;
+  gstNumber?: string;
 }
 
 interface AuthResponse {
@@ -13,6 +16,7 @@ interface AuthResponse {
   email: string;
   firstName: string;
   lastName: string;
+  gstNumber: string;
   role: string;
   message: string;
   success: boolean;
@@ -21,7 +25,10 @@ interface AuthResponse {
 export default function Login() {
   const [formData, setFormData] = useState<LoginForm>({
     email: '',
-    password: ''
+    password: '',
+    firstName: '',
+    lastName: '',
+    gstNumber: ''
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -52,6 +59,7 @@ export default function Login() {
           email: response.data.email,
           firstName: response.data.firstName,
           lastName: response.data.lastName,
+          gstNumber: response.data.gstNumber,
           role: response.data.role
         }, response.data.token);
 
@@ -105,6 +113,7 @@ export default function Login() {
                       name="firstName"
                       type="text"
                       required={isSignup}
+                      value={formData.firstName}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
                       placeholder="John"
                       onChange={handleInputChange}
@@ -119,11 +128,33 @@ export default function Login() {
                       name="lastName"
                       type="text"
                       required={isSignup}
+                      value={formData.lastName}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
                       placeholder="Doe"
                       onChange={handleInputChange}
                     />
                   </div>
+                </div>
+                
+                <div>
+                  <label htmlFor="gstNumber" className="block text-sm font-medium text-gray-700 mb-2">
+                    GST Number <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    id="gstNumber"
+                    name="gstNumber"
+                    type="text"
+                    required={isSignup}
+                    value={formData.gstNumber}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                    placeholder="22AAAAA0000A1Z5"
+                    pattern="[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}"
+                    title="GST number must be in format: 22AAAAA0000A1Z5 (2 digits + 5 letters + 4 digits + 1 letter + 1 alphanumeric + Z + 1 alphanumeric)"
+                    onChange={handleInputChange}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Format: 22AAAAA0000A1Z5 (15 characters)
+                  </p>
                 </div>
               </>
             )}
@@ -197,7 +228,7 @@ export default function Login() {
                 onClick={() => {
                   setIsSignup(!isSignup);
                   setError('');
-                  setFormData({ email: '', password: '' });
+                  setFormData({ email: '', password: '', firstName: '', lastName: '', gstNumber: '' });
                 }}
                 className="ml-1 text-blue-600 hover:text-blue-700 font-medium transition-colors"
               >

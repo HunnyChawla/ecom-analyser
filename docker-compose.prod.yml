@@ -8,7 +8,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "0.0.0.0:5432:5432"
+      - "192.168.1.8:5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
     restart: unless-stopped
@@ -23,7 +23,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: postgres
       KAFKA_ENABLED: "false"
     ports:
-      - "0.0.0.0:8080:8080"
+      - "192.168.1.8:8080:8080"
     depends_on:
       - db
     restart: unless-stopped
@@ -33,8 +33,10 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: ecomanalyser_frontend_prod
+    environment:
+      - VITE_API_URL=http://192.168.1.8:8080
     ports:
-      - "0.0.0.0:80:80"
+      - "192.168.1.8:80:80"
     depends_on:
       - backend
     restart: unless-stopped

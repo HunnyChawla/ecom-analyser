@@ -24,7 +24,12 @@ public class AuthService {
     public AuthResponse signup(AuthRequest request) {
         // Check if user already exists
         if (userRepository.existsByEmail(request.getEmail())) {
-            return new AuthResponse(null, null, null, null, null, "User already exists with this email", false);
+            return new AuthResponse(null, null, null, null, null, null, "User already exists with this email", false);
+        }
+        
+        // Check if GST number already exists
+        if (userRepository.existsByGstNumber(request.getGstNumber())) {
+            return new AuthResponse(null, null, null, null, null, null, "GST number already registered", false);
         }
         
         // Create new user
@@ -33,6 +38,7 @@ public class AuthService {
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setFirstName(request.getFirstName());
         user.setLastName(request.getLastName());
+        user.setGstNumber(request.getGstNumber());
         user.setRole(UserEntity.Role.USER);
         user.setEnabled(true);
         
@@ -46,6 +52,7 @@ public class AuthService {
             savedUser.getEmail(),
             savedUser.getFirstName(),
             savedUser.getLastName(),
+            savedUser.getGstNumber(),
             savedUser.getRole().name(),
             "User registered successfully",
             true
@@ -73,13 +80,14 @@ public class AuthService {
                 user.getEmail(),
                 user.getFirstName(),
                 user.getLastName(),
+                user.getGstNumber(),
                 user.getRole().name(),
                 "Login successful",
                 true
             );
             
         } catch (Exception e) {
-            return new AuthResponse(null, null, null, null, null, "Invalid email or password", false);
+            return new AuthResponse(null, null, null, null, null, null, "Invalid email or password", false);
         }
     }
 }

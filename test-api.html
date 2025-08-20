@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Test</title>
+</head>
+<body>
+    <h1>API Configuration Test</h1>
+    <div id="result"></div>
+    
+    <script>
+        // Test the API configuration
+        const testApi = async () => {
+            try {
+                const response = await fetch('http://192.168.1.8:8080/api/auth/health');
+                const data = await response.text();
+                document.getElementById('result').innerHTML = `
+                    <h3>✅ API Test Successful!</h3>
+                    <p><strong>Status:</strong> ${response.status}</p>
+                    <p><strong>Response:</strong> ${data}</p>
+                    <p><strong>URL:</strong> http://192.168.1.8:8080/api/auth/health</p>
+                `;
+            } catch (error) {
+                document.getElementById('result').innerHTML = `
+                    <h3>❌ API Test Failed!</h3>
+                    <p><strong>Error:</strong> ${error.message}</p>
+                    <p><strong>URL:</strong> http://192.168.1.8:8080/api/auth/health</p>
+                `;
+            }
+        };
+        
+        // Test signup endpoint
+        const testSignup = async () => {
+            try {
+                const response = await fetch('http://192.168.1.8:8080/api/auth/signup', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        username: 'testuser',
+                        password: 'testpass123',
+                        email: 'testuser@example.com'
+                    })
+                });
+                const data = await response.json();
+                document.getElementById('result').innerHTML += `
+                    <h3>✅ Signup Test Successful!</h3>
+                    <p><strong>Status:</strong> ${response.status}</p>
+                    <p><strong>Response:</strong> ${JSON.stringify(data, null, 2)}</p>
+                `;
+            } catch (error) {
+                document.getElementById('result').innerHTML += `
+                    <h3>❌ Signup Test Failed!</h3>
+                    <p><strong>Error:</strong> ${error.message}</p>
+                `;
+            }
+        };
+        
+        // Run tests when page loads
+        window.onload = () => {
+            testApi();
+            setTimeout(testSignup, 1000);
+        };
+    </script>
+</body>
+</html>

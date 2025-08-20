@@ -23,7 +23,7 @@ export default function UploadData() {
             <UploaderInline endpoint="/api/upload/sku-prices" />
           </div>
           <a
-            href="http://localhost:8080/api/sku-prices/template"
+                            href="http://192.168.1.8:8080/api/sku-prices/template"
             className="px-3 py-1 rounded bg-gray-100 border text-sm hover:bg-gray-200 transition-colors"
           >
             Download Template

@@ -9,10 +9,13 @@ export default defineConfig({
     host: '0.0.0.0',
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        target: 'http://192.168.1.8:8080',
         changeOrigin: true,
         secure: false,
       },
     },
+  },
+  define: {
+    'import.meta.env.VITE_API_URL': JSON.stringify('http://192.168.1.8:8080'),
   },
 })

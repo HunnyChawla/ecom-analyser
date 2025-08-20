@@ -19,4 +19,8 @@ public class AuthRequest {
     // For signup
     private String firstName;
     private String lastName;
+    
+    @NotBlank(message = "GST number is required")
+    @Size(min = 15, max = 15, message = "GST number must be exactly 15 characters")
+    private String gstNumber;
 }

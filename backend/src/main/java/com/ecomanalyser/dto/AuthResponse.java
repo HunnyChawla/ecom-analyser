@@ -13,6 +13,7 @@ public class AuthResponse {
     private String email;
     private String firstName;
     private String lastName;
+    private String gstNumber;
     private String role;
     private String message;
     private boolean success;
